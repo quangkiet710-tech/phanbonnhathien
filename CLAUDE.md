@@ -1,0 +1,1 @@
+Luôn trả lời bằng tiếng Việt. Viết commit message bằng tiếng Việt. Dự án: app POS cho cửa hàng phân bón Phân Bón Nhật Hiền, toàn bộ nằm trong một file index.html, deploy tự động lên Vercel qua GitHub.
