@@ -159,9 +159,11 @@ tr:hover td{background:var(--g50);}
 .login-tabs{display:flex;background:var(--g50);border-radius:10px;padding:4px;margin-bottom:20px;gap:4px;}
 .login-tab{flex:1;padding:9px;border-radius:8px;border:none;cursor:pointer;font-size:13.5px;font-weight:700;background:transparent;color:var(--muted);transition:.15s;font-family:var(--font);}
 .login-tab.active{background:#fff;color:var(--g800);box-shadow:var(--shadow);}
-.phone-input-wrap{display:flex;border:1.5px solid var(--border);border-radius:var(--radius-sm);overflow:hidden;margin-bottom:12px;}
+.phone-input-wrap{display:flex;border:1.5px solid var(--border);border-radius:var(--radius-sm);overflow:hidden;margin-bottom:6px;}
+.phone-input-wrap.error{border-color:var(--red);}
 .phone-prefix{padding:11px 12px;background:var(--g50);color:var(--ink2);font-weight:700;border-right:1.5px solid var(--border);font-size:14px;}
 .phone-input-wrap input{flex:1;border:none;outline:none;padding:11px 13px;font-size:16px;font-family:var(--font);}
+.field-error{color:var(--red);font-size:12px;font-weight:700;text-align:left;margin-bottom:6px;}
 
 
 /* ============================================================
@@ -341,13 +343,14 @@ tr:hover td{background:var(--g50);}
       <div id="step-phone">
         <div class="form-group mb-16">
           <label>Số điện thoại</label>
-          <div class="phone-input-wrap">
+          <div class="phone-input-wrap" id="phone-input-wrap">
             <div class="phone-prefix">🇻🇳 +84</div>
             <input type="tel" id="inp-phone" placeholder="0901234567" maxlength="11" inputmode="numeric"
-              onkeydown="if(event.key==='Enter')checkPhoneStep()"/>
+              onkeydown="if(event.key==='Enter')checkPhoneStep()" oninput="hidePhoneError()"/>
           </div>
+          <div id="phone-error" class="field-error hidden"></div>
         </div>
-        <button class="btn btn-green w-full btn-lg" onclick="checkPhoneStep()">Tiếp tục →</button>
+        <button class="btn btn-green w-full btn-lg" id="btn-check-phone" onclick="checkPhoneStep()">Tiếp tục →</button>
       </div>
 
       <!-- STEP 2: Khách mới – nhập tên -->
@@ -582,26 +585,53 @@ function backToPhoneStep(){
     const el=document.getElementById(id); if(el) el.classList.add('hidden');
   });
   document.getElementById('step-phone').classList.remove('hidden');
+  hidePhoneError();
   document.getElementById('inp-phone').focus();
+}
+
+function showPhoneError(msg){
+  const err=document.getElementById('phone-error');
+  err.textContent=msg;
+  err.classList.remove('hidden');
+  document.getElementById('phone-input-wrap').classList.add('error');
+}
+function hidePhoneError(){
+  const err=document.getElementById('phone-error');
+  err.textContent='';
+  err.classList.add('hidden');
+  document.getElementById('phone-input-wrap').classList.remove('error');
 }
 
 function checkPhoneStep(){
   const p=document.getElementById('inp-phone').value.trim();
-  if(!/^0\d{9}$/.test(p)){toast('Số điện thoại không hợp lệ (VD: 0901234567)','error');return;}
-  pendingPhone=p;
-  const existing=DB.customers.find(c=>c.phone===p);
-  document.getElementById('step-phone').classList.add('hidden');
-  if(existing){
-    // Khách cũ → hiển thị xác nhận
+  hidePhoneError();
+  if(!/^0\d{9}$/.test(p)){showPhoneError('Số điện thoại không hợp lệ (phải đủ 10 số và bắt đầu bằng số 0)');return;}
+
+  const btn=document.getElementById('btn-check-phone');
+  btn.disabled=true;
+  btn.textContent='Đang kiểm tra...';
+
+  setTimeout(()=>{
+    const existing=DB.customers.find(c=>c.phone===p);
+    if(!existing){
+      // Không tìm thấy khách hàng trong hệ thống → coi là khách mới, yêu cầu nhập tên
+      pendingPhone=p;
+      btn.disabled=false;
+      btn.textContent='Tiếp tục →';
+      document.getElementById('step-phone').classList.add('hidden');
+      document.getElementById('display-phone-new').textContent=p;
+      document.getElementById('step-name').classList.remove('hidden');
+      setTimeout(()=>document.getElementById('inp-name-new').focus(),100);
+      return;
+    }
+    pendingPhone=p;
+    btn.disabled=false;
+    btn.textContent='Tiếp tục →';
+    document.getElementById('step-phone').classList.add('hidden');
     document.getElementById('display-name-confirm').textContent=existing.name;
     document.getElementById('display-phone-confirm').textContent=p;
     document.getElementById('step-confirm').classList.remove('hidden');
-  } else {
-    // Khách mới → yêu cầu nhập tên
-    document.getElementById('display-phone-new').textContent=p;
-    document.getElementById('step-name').classList.remove('hidden');
-    setTimeout(()=>document.getElementById('inp-name-new').focus(),100);
-  }
+  },500);
 }
 
 function registerAndLogin(){
