@@ -1,0 +1,1834 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0"/>
+<title>AgroPOS – Phân Bón Nhật Hiền</title>
+<style>
+/* ============================================================
+   DESIGN TOKENS
+   ============================================================ */
+:root {
+  --g900:#1b4d22; --g800:#2e7d32; --g700:#388e3c; --g600:#43a047;
+  --g100:#e8f5e9; --g50:#f1f8f2;
+  --amber:#f57f17; --amber-lt:#fff8e1;
+  --red:#c62828; --red-lt:#ffebee;
+  --blue:#1565c0; --blue-lt:#e3f2fd;
+  --zalo:#0068ff;
+  --ink:#1c2b1e; --ink2:#3d5a40; --muted:#78909c; --faint:#b0bec5;
+  --bg:#f3f6f3; --card:#fff;
+  --border:#dde6de; --border2:#c8d8ca;
+  --radius:12px; --radius-sm:8px; --radius-lg:18px;
+  --shadow:0 2px 12px rgba(0,0,0,.09);
+  --shadow-lg:0 8px 32px rgba(0,0,0,.14);
+  --font:'Segoe UI',system-ui,-apple-system,sans-serif;
+}
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent;}
+html,body{height:100%;overflow:hidden;}
+body{font-family:var(--font);font-size:14px;background:var(--bg);color:var(--ink);}
+
+/* ============================================================
+   UTILS
+   ============================================================ */
+.hidden{display:none!important;}
+.flex{display:flex;} .flex-col{flex-direction:column;} .flex-1{flex:1;min-width:0;}
+.items-center{align-items:center;} .justify-between{justify-content:space-between;}
+.gap-4{gap:4px;} .gap-8{gap:8px;} .gap-12{gap:12px;} .gap-16{gap:16px;}
+.p-16{padding:16px;} .p-20{padding:20px;}
+.mt-8{margin-top:8px;} .mt-12{margin-top:12px;} .mt-16{margin-top:16px;}
+.mb-8{margin-bottom:8px;} .mb-12{margin-bottom:12px;} .mb-16{margin-bottom:16px;}
+.text-sm{font-size:12px;} .text-xs{font-size:11px;} .text-lg{font-size:17px;} .text-xl{font-size:22px;}
+.font-bold{font-weight:700;} .font-black{font-weight:900;}
+.text-muted{color:var(--muted);} .text-green{color:var(--g800);} .text-red{color:var(--red);} .text-amber{color:var(--amber);}
+.text-center{text-align:center;} .text-right{text-align:right;}
+.w-full{width:100%;}
+.rounded{border-radius:var(--radius);}
+.truncate{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.grid-2{display:grid;grid-template-columns:1fr 1fr;gap:12px;}
+.grid-3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;}
+.grid-4{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;}
+.scroll-y{overflow-y:auto;}
+
+/* ============================================================
+   BADGE
+   ============================================================ */
+.badge{display:inline-flex;align-items:center;padding:3px 9px;border-radius:20px;font-size:11px;font-weight:700;letter-spacing:.2px;}
+.badge-green{background:#e8f5e9;color:#2e7d32;}
+.badge-red{background:#ffebee;color:#c62828;}
+.badge-amber{background:#fff8e1;color:#e65100;}
+.badge-blue{background:#e3f2fd;color:#1565c0;}
+.badge-gray{background:#eceff1;color:#546e7a;}
+
+/* ============================================================
+   BUTTON
+   ============================================================ */
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;padding:10px 18px;border-radius:var(--radius-sm);border:none;cursor:pointer;font-size:14px;font-weight:700;font-family:var(--font);transition:all .15s;white-space:nowrap;line-height:1;}
+.btn:active{transform:scale(.97);}
+.btn-green{background:var(--g800);color:#fff;}
+.btn-green:hover{background:var(--g900);}
+.btn-amber{background:var(--amber);color:#fff;}
+.btn-amber:hover{background:#e65100;}
+.btn-red{background:var(--red);color:#fff;}
+.btn-outline{background:transparent;border:1.5px solid var(--border2);color:var(--ink);}
+.btn-outline:hover{background:var(--g50);}
+.btn-ghost{background:transparent;border:none;color:var(--muted);}
+.btn-ghost:hover{color:var(--ink);background:var(--g50);}
+.btn-sm{padding:6px 12px;font-size:12.5px;}
+.btn-lg{padding:14px 24px;font-size:15px;border-radius:var(--radius);}
+.btn-icon{width:36px;height:36px;padding:0;border-radius:var(--radius-sm);}
+.btn-xl{padding:16px 32px;font-size:16px;border-radius:14px;}
+.btn:disabled{opacity:.5;cursor:not-allowed;}
+
+/* ============================================================
+   FORM
+   ============================================================ */
+.form-group{display:flex;flex-direction:column;gap:5px;}
+.form-group label{font-size:12px;font-weight:700;color:var(--ink2);text-transform:uppercase;letter-spacing:.4px;}
+.form-control{padding:10px 13px;border:1.5px solid var(--border);border-radius:var(--radius-sm);font-size:14px;font-family:var(--font);outline:none;width:100%;background:#fff;transition:.15s;color:var(--ink);}
+.form-control:focus{border-color:var(--g700);box-shadow:0 0 0 3px rgba(56,142,60,.12);}
+.form-control::placeholder{color:var(--faint);}
+select.form-control{cursor:pointer;}
+textarea.form-control{resize:vertical;min-height:80px;}
+
+/* ============================================================
+   CARD
+   ============================================================ */
+.card{background:var(--card);border-radius:var(--radius);border:1px solid var(--border);box-shadow:var(--shadow);}
+.card-header{padding:14px 18px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:10px;font-weight:700;font-size:14.5px;}
+.card-body{padding:16px 18px;}
+
+/* ============================================================
+   TABLE
+   ============================================================ */
+.tbl-wrap{overflow-x:auto;}
+table{width:100%;border-collapse:collapse;font-size:13.5px;}
+th{background:var(--g50);color:var(--muted);font-size:11.5px;font-weight:700;padding:10px 12px;text-align:left;border-bottom:2px solid var(--border);white-space:nowrap;text-transform:uppercase;letter-spacing:.4px;}
+td{padding:10px 12px;border-bottom:1px solid #f0f4f0;vertical-align:middle;}
+tr:last-child td{border-bottom:none;}
+tr:hover td{background:var(--g50);}
+
+/* ============================================================
+   MODAL
+   ============================================================ */
+.modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:1000;display:flex;align-items:center;justify-content:center;padding:16px;backdrop-filter:blur(2px);}
+.modal{background:#fff;border-radius:var(--radius-lg);box-shadow:var(--shadow-lg);width:100%;max-width:520px;max-height:92vh;overflow:hidden;display:flex;flex-direction:column;animation:modalIn .2s ease;}
+.modal-lg{max-width:720px;}
+.modal-sm{max-width:380px;}
+.modal-header{padding:18px 20px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:10px;flex-shrink:0;}
+.modal-header h2{font-size:16px;font-weight:800;flex:1;}
+.modal-body{padding:20px;overflow-y:auto;flex:1;}
+.modal-footer{padding:14px 20px;border-top:1px solid var(--border);display:flex;gap:8px;justify-content:flex-end;flex-shrink:0;}
+@keyframes modalIn{from{opacity:0;transform:scale(.95) translateY(8px)}to{opacity:1;transform:none}}
+
+/* ============================================================
+   TOAST
+   ============================================================ */
+#toast-root{position:fixed;bottom:80px;right:16px;z-index:9999;display:flex;flex-direction:column;gap:8px;pointer-events:none;}
+.toast{background:var(--ink);color:#fff;padding:12px 16px;border-radius:10px;font-size:13.5px;font-weight:600;box-shadow:var(--shadow-lg);animation:toastIn .25s ease;display:flex;align-items:center;gap:8px;max-width:320px;pointer-events:all;}
+.toast.success{background:var(--g800);}
+.toast.error{background:var(--red);}
+.toast.warning{background:var(--amber);}
+@keyframes toastIn{from{transform:translateX(110%);opacity:0}to{transform:none;opacity:1}}
+
+/* ============================================================
+   ZALO FLOAT BUTTON
+   ============================================================ */
+#zalo-float{position:fixed;bottom:20px;right:16px;z-index:999;display:flex;flex-direction:column;align-items:flex-end;gap:8px;}
+#zalo-btn{width:52px;height:52px;border-radius:50%;background:var(--zalo);border:none;cursor:pointer;display:flex;align-items:center;justify-content:center;box-shadow:0 4px 20px rgba(0,104,255,.4);transition:.2s;position:relative;}
+#zalo-btn:hover{transform:scale(1.08);}
+#zalo-btn svg{width:28px;height:28px;}
+#zalo-pulse{position:absolute;inset:0;border-radius:50%;border:2px solid var(--zalo);animation:pulse 2s infinite;}
+#zalo-label{background:rgba(0,0,0,.75);color:#fff;padding:5px 10px;border-radius:8px;font-size:12px;font-weight:600;white-space:nowrap;}
+@keyframes pulse{0%{transform:scale(1);opacity:.8}70%{transform:scale(1.5);opacity:0}100%{opacity:0}}
+
+/* ============================================================
+   SCREENS (LOGIN / CUSTOMER / ADMIN)
+   ============================================================ */
+#screen-login,#screen-customer,#screen-admin{position:fixed;inset:0;display:flex;flex-direction:column;overflow:hidden;}
+#screen-login{background:linear-gradient(145deg,var(--g900) 0%,var(--g700) 60%,#6dbf67 100%);align-items:center;justify-content:center;}
+#screen-customer{background:var(--bg);}
+#screen-admin{background:var(--bg);}
+
+/* ============================================================
+   LOGIN
+   ============================================================ */
+.login-card{background:#fff;border-radius:24px;padding:36px 32px;width:100%;max-width:400px;box-shadow:0 20px 60px rgba(0,0,0,.25);text-align:center;}
+.login-logo{font-size:48px;margin-bottom:8px;}
+.login-title{font-size:26px;font-weight:900;color:var(--g800);letter-spacing:-1px;}
+.login-sub{color:var(--muted);font-size:13px;margin-bottom:28px;margin-top:4px;}
+.login-tabs{display:flex;background:var(--g50);border-radius:10px;padding:4px;margin-bottom:20px;gap:4px;}
+.login-tab{flex:1;padding:9px;border-radius:8px;border:none;cursor:pointer;font-size:13.5px;font-weight:700;background:transparent;color:var(--muted);transition:.15s;font-family:var(--font);}
+.login-tab.active{background:#fff;color:var(--g800);box-shadow:var(--shadow);}
+.phone-input-wrap{display:flex;border:1.5px solid var(--border);border-radius:var(--radius-sm);overflow:hidden;margin-bottom:12px;}
+.phone-prefix{padding:11px 12px;background:var(--g50);color:var(--ink2);font-weight:700;border-right:1.5px solid var(--border);font-size:14px;}
+.phone-input-wrap input{flex:1;border:none;outline:none;padding:11px 13px;font-size:16px;font-family:var(--font);}
+
+
+/* ============================================================
+   CUSTOMER APP — TOP BAR
+   ============================================================ */
+.cust-topbar{background:var(--g800);color:#fff;padding:12px 16px;display:flex;align-items:center;gap:10px;flex-shrink:0;position:sticky;top:0;z-index:100;}
+.cust-topbar .logo-text{font-size:17px;font-weight:900;letter-spacing:-.5px;}
+.cust-topbar .greeting{font-size:12px;opacity:.8;flex:1;}
+.cust-avatar{width:34px;height:34px;border-radius:50%;background:rgba(255,255,255,.25);display:flex;align-items:center;justify-content:center;font-weight:800;font-size:14px;cursor:pointer;}
+
+/* CUSTOMER BOTTOM NAV */
+.cust-bottom-nav{background:#fff;border-top:1px solid var(--border);display:flex;flex-shrink:0;}
+.cust-nav-item{flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;padding:10px 4px 8px;cursor:pointer;color:var(--faint);transition:.15s;border:none;background:none;font-family:var(--font);}
+.cust-nav-item.active{color:var(--g800);}
+.cust-nav-item .nav-icon{font-size:22px;line-height:1;}
+.cust-nav-item .nav-label{font-size:10px;font-weight:700;}
+.cust-content{flex:1;overflow-y:auto;overflow-x:hidden;}
+
+/* CUSTOMER HOME */
+.hero-banner{background:linear-gradient(135deg,var(--g800),var(--g600));color:#fff;padding:20px 16px;margin:0;position:relative;overflow:hidden;}
+.hero-banner::after{content:'🌱';position:absolute;right:-10px;bottom:-10px;font-size:120px;opacity:.12;}
+.hero-title{font-size:20px;font-weight:900;line-height:1.2;margin-bottom:6px;}
+.hero-sub{font-size:13px;opacity:.85;}
+.hero-points{margin-top:14px;background:rgba(255,255,255,.15);border-radius:10px;padding:10px 14px;display:inline-flex;align-items:center;gap:8px;font-weight:700;font-size:14px;}
+
+.section-title{font-size:15px;font-weight:800;padding:16px 16px 8px;color:var(--ink);}
+
+/* PRODUCT CARD — CUSTOMER */
+.prod-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:10px;padding:0 12px 16px;}
+@media(min-width:520px){.prod-grid{grid-template-columns:repeat(3,1fr);}}
+@media(min-width:768px){.prod-grid{grid-template-columns:repeat(4,1fr);}}
+.prod-card{background:#fff;border-radius:var(--radius);border:1.5px solid var(--border);overflow:hidden;cursor:pointer;transition:.15s;position:relative;}
+.prod-card:active{transform:scale(.97);}
+.prod-card:hover{border-color:var(--g600);box-shadow:0 4px 16px rgba(46,125,50,.15);}
+.prod-card-img{height:90px;display:flex;align-items:center;justify-content:center;font-size:46px;background:var(--g50);}
+.prod-card-body{padding:10px;}
+.prod-card-name{font-size:13px;font-weight:700;line-height:1.3;margin-bottom:4px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;}
+.prod-card-price{font-size:14px;font-weight:900;color:var(--g800);}
+.prod-card-unit{font-size:10.5px;color:var(--muted);}
+.prod-card-add{position:absolute;top:8px;right:8px;width:28px;height:28px;border-radius:50%;background:var(--g800);color:#fff;border:none;cursor:pointer;font-size:18px;display:flex;align-items:center;justify-content:center;font-weight:700;line-height:1;}
+
+/* CART BADGE */
+.cart-badge{position:absolute;top:-4px;right:-4px;width:18px;height:18px;background:var(--red);color:#fff;border-radius:50%;font-size:10px;font-weight:800;display:flex;align-items:center;justify-content:center;}
+
+/* ORDER DETAIL */
+.cust-cart-item{display:flex;gap:10px;padding:12px 0;border-bottom:1px solid var(--border);}
+.cust-cart-item:last-child{border-bottom:none;}
+.cust-cart-icon{width:48px;height:48px;background:var(--g50);border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:26px;flex-shrink:0;}
+.qty-ctrl{display:flex;align-items:center;gap:6px;margin-top:6px;}
+.qty-btn{width:28px;height:28px;border-radius:6px;border:1.5px solid var(--border2);background:#fff;cursor:pointer;font-size:16px;font-weight:700;display:flex;align-items:center;justify-content:center;line-height:1;}
+.qty-val{width:32px;text-align:center;font-weight:800;font-size:15px;}
+
+/* QR MODAL */
+.qr-amount-display{font-size:32px;font-weight:900;color:var(--g800);text-align:center;margin:8px 0;}
+.qr-box{background:#fff;border-radius:16px;padding:20px;text-align:center;border:2px solid var(--border2);}
+.qr-box img{width:200px;height:200px;border-radius:8px;}
+.qr-bank-info{background:var(--g50);border-radius:10px;padding:14px;text-align:left;margin-top:14px;}
+.qr-info-row{display:flex;justify-content:space-between;align-items:center;padding:5px 0;border-bottom:1px solid var(--border);}
+.qr-info-row:last-child{border-bottom:none;}
+.qr-info-label{font-size:12px;color:var(--muted);font-weight:600;}
+.qr-info-val{font-size:13.5px;font-weight:800;color:var(--ink);}
+
+/* UNIT SELECTOR */
+.unit-selector{display:flex;gap:6px;flex-wrap:wrap;margin-top:6px;}
+.unit-btn{padding:6px 12px;border-radius:20px;border:1.5px solid var(--border2);background:#fff;cursor:pointer;font-size:12.5px;font-weight:700;font-family:var(--font);transition:.15s;color:var(--ink);}
+.unit-btn.active{background:var(--g800);color:#fff;border-color:var(--g800);}
+
+/* ============================================================
+   ADMIN APP
+   ============================================================ */
+.admin-topbar{background:var(--g900);color:#fff;padding:0 16px;height:52px;display:flex;align-items:center;gap:12px;flex-shrink:0;}
+.admin-topbar .logo{font-size:16px;font-weight:900;letter-spacing:-.5px;display:flex;align-items:center;gap:8px;}
+.admin-topbar .logo .tag{background:var(--amber);padding:2px 7px;border-radius:5px;font-size:11px;}
+.admin-topbar .clock{margin-left:auto;font-size:12px;opacity:.75;font-variant-numeric:tabular-nums;}
+.admin-layout{flex:1;display:flex;overflow:hidden;}
+
+/* ADMIN SIDEBAR */
+.admin-sidebar{width:200px;background:var(--g800);flex-shrink:0;overflow-y:auto;display:flex;flex-direction:column;}
+.sidebar-section{padding:12px 12px 4px;font-size:10px;font-weight:800;color:rgba(255,255,255,.45);text-transform:uppercase;letter-spacing:.8px;}
+.sidebar-item{display:flex;align-items:center;gap:9px;padding:10px 14px;color:rgba(255,255,255,.82);cursor:pointer;border-left:3px solid transparent;font-size:13px;font-weight:600;transition:.12s;}
+.sidebar-item:hover{background:rgba(255,255,255,.1);}
+.sidebar-item.active{background:rgba(255,255,255,.16);border-left-color:#fff;color:#fff;}
+.sidebar-item .s-icon{font-size:16px;width:20px;text-align:center;}
+.sidebar-close-btn{display:none;padding:10px 14px;border:none;background:rgba(255,255,255,.1);color:#fff;cursor:pointer;font-size:13px;font-weight:700;text-align:left;font-family:var(--font);}
+
+/* ADMIN CONTENT */
+.admin-content{flex:1;overflow:hidden;display:flex;flex-direction:column;}
+.admin-page-header{background:#fff;border-bottom:1px solid var(--border);padding:12px 20px;display:flex;align-items:center;gap:10px;flex-shrink:0;}
+.admin-page-header h1{font-size:17px;font-weight:800;flex:1;}
+.page-body-scroll{flex:1;overflow-y:auto;padding:16px 20px;}
+
+/* STAT CARD */
+.stat-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:12px;margin-bottom:16px;}
+@media(min-width:768px){.stat-grid{grid-template-columns:repeat(4,1fr);}}
+.stat-card{background:#fff;border-radius:var(--radius);padding:16px;border:1px solid var(--border);box-shadow:var(--shadow);}
+.stat-card .s-icon-wrap{font-size:24px;margin-bottom:8px;}
+.stat-card .s-label{font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.4px;}
+.stat-card .s-val{font-size:22px;font-weight:900;margin-top:2px;color:var(--ink);}
+.stat-card .s-sub{font-size:11.5px;color:var(--muted);margin-top:2px;}
+
+/* POS LAYOUT */
+.pos-wrap{display:flex;flex:1;overflow:hidden;height:100%;}
+.pos-left{flex:1;overflow-y:auto;padding:12px;}
+.pos-right{width:340px;background:#fff;border-left:1px solid var(--border);display:flex;flex-direction:column;flex-shrink:0;}
+@media(max-width:768px){.pos-right{width:100%;position:fixed;bottom:0;left:0;right:0;top:auto;height:50vh;border-top:1px solid var(--border);border-left:none;z-index:50;} .pos-left{padding-bottom:52vh;}}
+.pos-prod-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:10px;}
+.pos-prod-card{background:#fff;border:1.5px solid var(--border);border-radius:var(--radius);padding:12px 10px;cursor:pointer;text-align:center;transition:.15s;}
+.pos-prod-card:hover{border-color:var(--g600);box-shadow:0 4px 16px rgba(46,125,50,.15);transform:translateY(-2px);}
+.pos-prod-card .p-icon{font-size:28px;margin-bottom:6px;}
+.pos-prod-card .p-name{font-size:12.5px;font-weight:700;margin-bottom:4px;line-height:1.3;}
+.pos-prod-card .p-price{font-size:13px;font-weight:900;color:var(--g800);}
+.pos-prod-card .p-stock{font-size:10.5px;color:var(--muted);margin-top:2px;}
+
+/* CART */
+.cart-header{padding:12px 16px;background:var(--g50);border-bottom:1px solid var(--border);font-weight:800;font-size:14px;display:flex;align-items:center;gap:8px;}
+.cart-items{flex:1;overflow-y:auto;padding:8px;}
+.cart-item{background:var(--g50);border-radius:8px;padding:8px 10px;margin-bottom:6px;display:flex;align-items:center;gap:8px;}
+.cart-item .ci-name{flex:1;font-size:12.5px;font-weight:700;line-height:1.3;}
+.ci-unit-badge{font-size:10px;font-weight:700;background:#fff;border:1px solid var(--border);border-radius:4px;padding:1px 5px;color:var(--muted);}
+.cart-footer{padding:12px 14px;border-top:1px solid var(--border);}
+.sum-row{display:flex;justify-content:space-between;padding:3px 0;font-size:13.5px;}
+.sum-total{font-size:17px;font-weight:900;color:var(--g800);border-top:2px solid var(--border);padding-top:8px;margin-top:4px;}
+
+/* CHART */
+.bar-chart{display:flex;align-items:flex-end;gap:6px;height:160px;padding:0 4px;}
+.bar-col{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;gap:4px;height:100%;}
+.bar-fill{background:linear-gradient(to top,var(--g800),var(--g600));border-radius:4px 4px 0 0;width:100%;min-height:3px;transition:.3s;}
+.bar-lbl{font-size:9.5px;color:var(--muted);font-weight:700;margin-top:2px;}
+.bar-val-txt{font-size:9px;color:var(--muted);font-weight:700;}
+
+/* MOBILE SIDEBAR TOGGLE */
+.sidebar-toggle{display:none;width:36px;height:36px;background:rgba(255,255,255,.15);border:none;color:#fff;border-radius:8px;cursor:pointer;font-size:18px;align-items:center;justify-content:center;}
+@media(max-width:768px){
+  .sidebar-toggle{display:flex;}
+  .admin-sidebar{position:fixed;left:-210px;top:52px;bottom:0;z-index:200;transition:.25s;box-shadow:var(--shadow-lg);}
+  .admin-sidebar.open{left:0;}
+  .sidebar-close-btn{display:block;}
+}
+
+/* RESPONSIVE PAGE BODY */
+@media(max-width:640px){
+  .page-body-scroll{padding:12px;}
+  .stat-grid{grid-template-columns:1fr 1fr;}
+  .grid-4{grid-template-columns:1fr 1fr;}
+  th,td{padding:8px;}
+}
+
+/* SEARCH BAR */
+.search-wrap{position:relative;display:flex;align-items:center;}
+.search-wrap input{padding:9px 12px 9px 36px;border:1.5px solid var(--border);border-radius:var(--radius-sm);font-size:13.5px;outline:none;font-family:var(--font);}
+.search-wrap input:focus{border-color:var(--g700);}
+.search-ico{position:absolute;left:10px;font-size:15px;pointer-events:none;}
+
+/* ALERT */
+.alert{padding:12px 14px;border-radius:8px;font-size:13px;display:flex;gap:8px;align-items:flex-start;}
+.alert-warn{background:var(--amber-lt);border:1px solid #ffe082;color:#bf360c;}
+.alert-ok{background:var(--g100);border:1px solid #a5d6a7;color:#1b5e20;}
+</style>
+</head>
+<body>
+
+<!-- ===================== LOGIN SCREEN ===================== -->
+<div id="screen-login">
+  <div class="login-card">
+    <div class="login-logo">🌱</div>
+    <div class="login-title">AgroPOS</div>
+    <div class="login-sub">Phân Bón Nhật Hiền – Đồng Nai</div>
+
+    <div class="login-tabs">
+      <button class="login-tab active" onclick="switchLoginTab('customer')">👨‍🌾 Khách hàng</button>
+      <button class="login-tab" onclick="switchLoginTab('admin')">🔐 Quản trị</button>
+    </div>
+
+    <!-- CUSTOMER LOGIN -->
+    <div id="login-customer">
+      <!-- STEP 1: Nhập số điện thoại -->
+      <div id="step-phone">
+        <div class="form-group mb-16">
+          <label>Số điện thoại</label>
+          <div class="phone-input-wrap">
+            <div class="phone-prefix">🇻🇳 +84</div>
+            <input type="tel" id="inp-phone" placeholder="0901234567" maxlength="11" inputmode="numeric"
+              onkeydown="if(event.key==='Enter')checkPhoneStep()"/>
+          </div>
+        </div>
+        <button class="btn btn-green w-full btn-lg" onclick="checkPhoneStep()">Tiếp tục →</button>
+      </div>
+
+      <!-- STEP 2: Khách mới – nhập tên -->
+      <div id="step-name" class="hidden">
+        <p class="text-sm text-muted mb-12" style="text-align:center">
+          Số <strong id="display-phone-new"></strong> chưa có trong hệ thống.<br>Vui lòng nhập tên để tạo tài khoản.
+        </p>
+        <div class="form-group mb-16">
+          <label>Họ và tên</label>
+          <input class="form-control" id="inp-name-new" placeholder="VD: Nguyễn Văn A"
+            onkeydown="if(event.key==='Enter')registerAndLogin()"/>
+        </div>
+        <button class="btn btn-green w-full btn-lg" onclick="registerAndLogin()">✅ Tạo tài khoản & Vào mua hàng</button>
+        <button class="btn btn-ghost w-full mt-8" onclick="backToPhoneStep()">← Đổi số điện thoại</button>
+      </div>
+
+      <!-- STEP 3: Khách cũ – xác nhận -->
+      <div id="step-confirm" class="hidden">
+        <div style="background:var(--g50);border:1.5px solid var(--border2);border-radius:var(--radius);padding:16px;text-align:center;margin-bottom:16px">
+          <div style="font-size:36px;margin-bottom:6px">👋</div>
+          <div style="font-weight:900;font-size:17px" id="display-name-confirm"></div>
+          <div class="text-muted text-sm mt-4" id="display-phone-confirm"></div>
+        </div>
+        <button class="btn btn-green w-full btn-lg" onclick="confirmLogin()">✅ Đúng, vào mua hàng!</button>
+        <button class="btn btn-ghost w-full mt-8" onclick="backToPhoneStep()">← Không phải tôi</button>
+      </div>
+    </div>
+
+    <!-- ADMIN LOGIN -->
+    <div id="login-admin" class="hidden">
+      <div class="form-group mb-12">
+        <label>Tên đăng nhập</label>
+        <input class="form-control" id="inp-user" placeholder="admin" value="admin"/>
+      </div>
+      <div class="form-group mb-16">
+        <label>Mật khẩu</label>
+        <input class="form-control" type="password" id="inp-pass" placeholder="••••••" value="1234" onkeydown="if(event.key==='Enter')loginAdmin()"/>
+      </div>
+      <button class="btn btn-green w-full btn-lg" onclick="loginAdmin()">Đăng nhập quản trị 🔐</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===================== CUSTOMER SCREEN ===================== -->
+<div id="screen-customer" class="hidden">
+  <div class="cust-topbar">
+    <span style="font-size:22px">🌱</span>
+    <div style="flex:1">
+      <div class="logo-text">Phân Bón Nhật Hiền</div>
+      <div class="greeting" id="cust-greeting">Xin chào!</div>
+    </div>
+    <div style="position:relative;cursor:pointer" onclick="showCustPage('cart')">
+      <span style="font-size:22px">🛒</span>
+      <div class="cart-badge" id="cust-cart-badge" style="display:none">0</div>
+    </div>
+    <div class="cust-avatar" id="cust-avatar" onclick="showCustPage('account')">K</div>
+  </div>
+
+  <div class="cust-content" id="cust-content"></div>
+
+  <div class="cust-bottom-nav">
+    <button class="cust-nav-item active" id="cnav-home" onclick="showCustPage('home')">
+      <div class="nav-icon">🏠</div><div class="nav-label">Trang chủ</div>
+    </button>
+    <button class="cust-nav-item" id="cnav-shop" onclick="showCustPage('shop')">
+      <div class="nav-icon">🛍️</div><div class="nav-label">Mua hàng</div>
+    </button>
+    <button class="cust-nav-item" id="cnav-cart" onclick="showCustPage('cart')">
+      <div class="nav-icon" style="position:relative;display:inline-block">
+        🛒<div class="cart-badge" id="cust-cart-badge2" style="display:none;position:absolute;top:-4px;right:-4px">0</div>
+      </div>
+      <div class="nav-label">Giỏ hàng</div>
+    </button>
+    <button class="cust-nav-item" id="cnav-orders" onclick="showCustPage('orders')">
+      <div class="nav-icon">📋</div><div class="nav-label">Đơn hàng</div>
+    </button>
+    <button class="cust-nav-item" id="cnav-account" onclick="showCustPage('account')">
+      <div class="nav-icon">👤</div><div class="nav-label">Tài khoản</div>
+    </button>
+  </div>
+</div>
+
+<!-- ===================== ADMIN SCREEN ===================== -->
+<div id="screen-admin" class="hidden">
+  <div class="admin-topbar">
+    <button class="sidebar-toggle" onclick="toggleSidebar()">☰</button>
+    <div class="logo">🌱 AgroPOS <span class="tag">ADMIN</span></div>
+    <div class="clock" id="admin-clock"></div>
+    <button class="btn btn-ghost btn-sm" style="color:rgba(255,255,255,.7)" onclick="logoutAdmin()">Đăng xuất</button>
+  </div>
+  <div class="admin-layout">
+    <div class="admin-sidebar" id="admin-sidebar">
+      <button class="sidebar-close-btn" onclick="toggleSidebar()">✕ Đóng menu</button>
+      <div class="sidebar-section">Bán hàng</div>
+      <div class="sidebar-item active" onclick="showAdminPage('pos')"><span class="s-icon">🛒</span>Bán hàng</div>
+      <div class="sidebar-item" onclick="showAdminPage('invoices')"><span class="s-icon">📋</span>Hóa đơn</div>
+      <div class="sidebar-section">Kho & Hàng hóa</div>
+      <div class="sidebar-item" onclick="showAdminPage('products')"><span class="s-icon">📦</span>Sản phẩm</div>
+      <div class="sidebar-item" onclick="showAdminPage('inventory')"><span class="s-icon">🏭</span>Nhập kho</div>
+      <div class="sidebar-section">Khách hàng</div>
+      <div class="sidebar-item" onclick="showAdminPage('customers')"><span class="s-icon">👥</span>Khách hàng</div>
+      <div class="sidebar-item" onclick="showAdminPage('debt')"><span class="s-icon">💳</span>Công nợ</div>
+      <div class="sidebar-section">Báo cáo</div>
+      <div class="sidebar-item" onclick="showAdminPage('dashboard')"><span class="s-icon">📊</span>Tổng quan</div>
+      <div class="sidebar-section">Cài đặt</div>
+      <div class="sidebar-item" onclick="showAdminPage('settings')"><span class="s-icon">⚙️</span>Cài đặt</div>
+    </div>
+    <div class="admin-content">
+      <div id="admin-content" style="display:flex;flex-direction:column;flex:1;overflow:hidden;"></div>
+    </div>
+  </div>
+</div>
+
+<!-- ZALO FLOAT -->
+<div id="zalo-float" class="hidden">
+  <div id="zalo-label">Hỗ trợ qua Zalo</div>
+  <a id="zalo-btn" href="https://zalo.me/0901112233" target="_blank" title="Chat Zalo hỗ trợ">
+    <div id="zalo-pulse"></div>
+    <svg viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <rect width="48" height="48" rx="12" fill="#fff"/>
+      <text x="24" y="34" text-anchor="middle" font-size="22" font-weight="bold" fill="#0068ff" font-family="Arial">Z</text>
+    </svg>
+  </a>
+</div>
+
+<!-- TOAST -->
+<div id="toast-root"></div>
+<!-- MODAL -->
+<div id="modal-root"></div>
+
+<script>
+// ============================================================
+// DATA STORE
+// ============================================================
+const KEY = 'agropos_v2';
+const DEFAULT = {
+  settings:{
+    storeName:'Phân Bón Nhật Hiền', phone:'0901112233', zaloPhone:'0901112233',
+    address:'123 Bình Minh, Trảng Bom, Đồng Nai', bank:'VCB', bankAccount:'1234567890',
+    bankName:'Nguyễn Văn A', adminUser:'admin', adminPass:'1234'
+  },
+  products:[
+    {id:'p1',name:'Phân Urê Đạm 46%',cat:'Phân đạm',icon:'🌿',cost:480000,price:620000,
+     stock:150,minStock:20,sku:'URE001',supplier:'PVFCCo',
+     units:[{name:'Bao 50kg',ratio:1,price:620000},{name:'Kg',ratio:50,price:13000}]},
+    {id:'p2',name:'Phân NPK 16-16-8',cat:'Phân tổng hợp',icon:'🧪',cost:420000,price:550000,
+     stock:200,minStock:30,sku:'NPK001',supplier:'Bình Điền',
+     units:[{name:'Bao 50kg',ratio:1,price:550000},{name:'Kg',ratio:50,price:12000},{name:'Bao 25kg',ratio:2,price:280000}]},
+    {id:'p3',name:'Phân Kali KCl 60%',cat:'Phân kali',icon:'🌾',cost:370000,price:480000,
+     stock:8,minStock:20,sku:'KCL001',supplier:'VTNN',
+     units:[{name:'Bao 50kg',ratio:1,price:480000},{name:'Kg',ratio:50,price:10500}]},
+    {id:'p4',name:'Phân Lân Super Lân',cat:'Phân lân',icon:'⚗️',cost:210000,price:280000,
+     stock:120,minStock:25,sku:'LAN001',supplier:'Lâm Thao',
+     units:[{name:'Bao 50kg',ratio:1,price:280000},{name:'Kg',ratio:50,price:6000}]},
+    {id:'p5',name:'Phân Hữu Cơ Sinh Học',cat:'Phân hữu cơ',icon:'🍃',cost:130000,price:180000,
+     stock:80,minStock:20,sku:'HCSH001',supplier:'Organic VN',
+     units:[{name:'Bao 25kg',ratio:1,price:180000},{name:'Kg',ratio:25,price:8000}]},
+    {id:'p6',name:'Thuốc BVTV Tilt Super',cat:'Thuốc BVTV',icon:'🛡️',cost:60000,price:85000,
+     stock:5,minStock:15,sku:'BVTV001',supplier:'Syngenta',
+     units:[{name:'Chai 250ml',ratio:1,price:85000}]},
+    {id:'p7',name:'Phân DAP 18-46-0',cat:'Phân tổng hợp',icon:'💊',cost:520000,price:680000,
+     stock:95,minStock:20,sku:'DAP001',supplier:'VTNN',
+     units:[{name:'Bao 50kg',ratio:1,price:680000},{name:'Kg',ratio:50,price:14500}]},
+    {id:'p8',name:'Vi lượng Canxi-Bo',cat:'Phân vi lượng',icon:'💧',cost:65000,price:95000,
+     stock:45,minStock:10,sku:'VL001',supplier:'BioFarm',
+     units:[{name:'Chai 1 lít',ratio:1,price:95000}]},
+  ],
+  customers:[
+    {id:'c1',name:'Nguyễn Văn An',phone:'0901234567',address:'Xã Bình Minh, Trảng Bom',type:'VIP',totalBuy:12500000,debt:500000,points:1250,notes:'Khách trồng lúa lâu năm'},
+    {id:'c2',name:'Trần Thị Bình',phone:'0912345678',address:'Xã Hố Nai 3, Trảng Bom',type:'Thường',totalBuy:3200000,debt:0,points:320,notes:''},
+    {id:'c3',name:'Lê Hoàng Nam',phone:'0923456789',address:'Xã Tây Hòa, Trảng Bom',type:'Sỉ',totalBuy:45000000,debt:2300000,points:4500,notes:'Đại lý cấp 2'},
+  ],
+  invoices:[
+    {id:'HD001',date:'2025-06-25',customerId:'c1',customerName:'Nguyễn Văn An',items:[{productId:'p1',name:'Phân Urê Đạm 46%',qty:5,unit:'Bao 50kg',price:620000}],total:3100000,paid:2600000,debt:500000,status:'partial'},
+    {id:'HD002',date:'2025-06-28',customerId:'c2',customerName:'Trần Thị Bình',items:[{productId:'p5',name:'Phân Hữu Cơ Sinh Học',qty:4,unit:'Bao 25kg',price:180000}],total:720000,paid:720000,debt:0,status:'paid'},
+    {id:'HD003',date:'2025-06-28',customerId:'c3',customerName:'Lê Hoàng Nam',items:[{productId:'p1',name:'Phân Urê Đạm 46%',qty:20,unit:'Bao 50kg',price:600000},{productId:'p7',name:'Phân DAP 18-46-0',qty:10,unit:'Bao 50kg',price:670000}],total:18700000,paid:16400000,debt:2300000,status:'partial'},
+  ],
+  stockImports:[],
+  custOrders:[]
+};
+
+function loadDB(){try{const r=localStorage.getItem(KEY);if(r)return JSON.parse(r);}catch(e){}return JSON.parse(JSON.stringify(DEFAULT));}
+function saveDB(){localStorage.setItem(KEY,JSON.stringify(DB));}
+let DB=loadDB();
+
+// ============================================================
+// UTILS
+// ============================================================
+function fmt(n){return new Intl.NumberFormat('vi-VN').format(Math.round(n||0))+'đ';}
+function fmtD(d){if(!d)return'';return new Date(d).toLocaleDateString('vi-VN');}
+function uid(){return Date.now().toString(36)+Math.random().toString(36).slice(2,5);}
+function today(){return new Date().toISOString().slice(0,10);}
+
+function toast(msg,type='success'){
+  const r=document.getElementById('toast-root');
+  const t=document.createElement('div');
+  t.className=`toast ${type}`;
+  const i={success:'✅',error:'❌',warning:'⚠️'};
+  t.innerHTML=`${i[type]||'ℹ️'} ${msg}`;
+  r.appendChild(t);
+  setTimeout(()=>t.style.opacity='0',2800);
+  setTimeout(()=>t.remove(),3200);
+}
+
+function showModal(html){document.getElementById('modal-root').innerHTML=`<div class="modal-overlay" onclick="if(event.target===this)closeModal()">${html}</div>`;}
+function closeModal(){document.getElementById('modal-root').innerHTML='';}
+
+// ============================================================
+// CLOCK
+// ============================================================
+function updateClock(){
+  const now=new Date();
+  const el=document.getElementById('admin-clock');
+  if(el)el.textContent=now.toLocaleTimeString('vi-VN')+' – '+now.toLocaleDateString('vi-VN',{weekday:'short',day:'2-digit',month:'2-digit'});
+}
+setInterval(updateClock,1000);updateClock();
+
+// ============================================================
+// LOGIN
+// ============================================================
+let loginMode='customer';
+function switchLoginTab(mode){
+  loginMode=mode;
+  document.querySelectorAll('.login-tab').forEach((t,i)=>t.classList.toggle('active',i===(mode==='customer'?0:1)));
+  document.getElementById('login-customer').classList.toggle('hidden',mode!=='customer');
+  document.getElementById('login-admin').classList.toggle('hidden',mode!=='admin');
+}
+
+let pendingPhone='';
+function backToPhoneStep(){
+  ['step-name','step-otp','step-confirm'].forEach(id=>{
+    const el=document.getElementById(id); if(el) el.classList.add('hidden');
+  });
+  document.getElementById('step-phone').classList.remove('hidden');
+  document.getElementById('inp-phone').focus();
+}
+
+function checkPhoneStep(){
+  const p=document.getElementById('inp-phone').value.trim();
+  if(!/^0\d{9}$/.test(p)){toast('Số điện thoại không hợp lệ (VD: 0901234567)','error');return;}
+  pendingPhone=p;
+  const existing=DB.customers.find(c=>c.phone===p);
+  document.getElementById('step-phone').classList.add('hidden');
+  if(existing){
+    // Khách cũ → hiển thị xác nhận
+    document.getElementById('display-name-confirm').textContent=existing.name;
+    document.getElementById('display-phone-confirm').textContent=p;
+    document.getElementById('step-confirm').classList.remove('hidden');
+  } else {
+    // Khách mới → yêu cầu nhập tên
+    document.getElementById('display-phone-new').textContent=p;
+    document.getElementById('step-name').classList.remove('hidden');
+    setTimeout(()=>document.getElementById('inp-name-new').focus(),100);
+  }
+}
+
+function registerAndLogin(){
+  const name=document.getElementById('inp-name-new').value.trim();
+  if(!name){toast('Vui lòng nhập họ tên!','error');return;}
+  const cust={id:'c'+uid(),name,phone:pendingPhone,address:'',type:'Thường',totalBuy:0,debt:0,points:0,notes:''};
+  DB.customers.push(cust);
+  saveDB();
+  currentCustomer=cust;
+  toast(`Chào mừng ${name}! 🎉`);
+  loginAsCustomer();
+}
+
+function confirmLogin(){
+  const cust=DB.customers.find(c=>c.phone===pendingPhone);
+  if(!cust){toast('Lỗi, vui lòng thử lại','error');backToPhoneStep();return;}
+  currentCustomer=cust;
+  loginAsCustomer();
+}
+function loginAdmin(){
+  const u=document.getElementById('inp-user').value;
+  const p=document.getElementById('inp-pass').value;
+  if(u===DB.settings.adminUser&&p===DB.settings.adminPass){
+    document.getElementById('screen-login').classList.add('hidden');
+    document.getElementById('screen-admin').classList.remove('hidden');
+    document.getElementById('zalo-float').classList.remove('hidden');
+    showAdminPage('pos');
+    toast('Đăng nhập thành công!');
+  } else {
+    toast('Sai tên đăng nhập hoặc mật khẩu!','error');
+  }
+}
+function logoutAdmin(){
+  document.getElementById('screen-admin').classList.add('hidden');
+  document.getElementById('screen-login').classList.remove('hidden');
+  document.getElementById('zalo-float').classList.add('hidden');
+}
+
+// ============================================================
+// CUSTOMER APP
+// ============================================================
+let currentCustomer=null;
+let custCart=[];
+let custPage='home';
+
+function loginAsCustomer(){
+  document.getElementById('screen-login').classList.add('hidden');
+  document.getElementById('screen-customer').classList.remove('hidden');
+  document.getElementById('zalo-float').classList.remove('hidden');
+  document.getElementById('zalo-btn').href=`https://zalo.me/${DB.settings.zaloPhone}`;
+  document.getElementById('cust-greeting').textContent=`Xin chào, ${currentCustomer.name}!`;
+  document.getElementById('cust-avatar').textContent=currentCustomer.name[0].toUpperCase();
+  showCustPage('home');
+}
+
+function showCustPage(page){
+  custPage=page;
+  ['home','shop','cart','orders','account'].forEach(p=>{
+    const el=document.getElementById(`cnav-${p}`);
+    if(el)el.classList.toggle('active',p===page);
+  });
+  const c=document.getElementById('cust-content');
+  ({home:renderCustHome,shop:renderCustShop,cart:renderCustCart,orders:renderCustOrders,account:renderCustAccount}[page]||renderCustHome)(c);
+  updateCustCartBadge();
+}
+
+function updateCustCartBadge(){
+  const total=custCart.reduce((s,i)=>s+i.qty,0);
+  ['cust-cart-badge','cust-cart-badge2'].forEach(id=>{
+    const el=document.getElementById(id);
+    if(el){el.textContent=total;el.style.display=total>0?'flex':'none';}
+  });
+}
+
+// CUSTOMER HOME
+function renderCustHome(c){
+  const cu=currentCustomer;
+  const myOrders=DB.custOrders.filter(o=>o.customerId===cu.id);
+  const totalSpent=myOrders.reduce((s,o)=>s+o.total,0);
+  c.innerHTML=`
+  <div class="hero-banner">
+    <div class="hero-title">🌾 Mua phân bón<br>chất lượng cao</div>
+    <div class="hero-sub">Giao hàng tận nơi – Hỗ trợ kỹ thuật 24/7</div>
+    <div class="hero-points">⭐ ${cu.points||0} điểm tích lũy</div>
+  </div>
+
+  <div style="padding:12px 12px 0;display:grid;grid-template-columns:1fr 1fr;gap:10px">
+    <div class="card card-body" style="text-align:center;cursor:pointer" onclick="showCustPage('shop')">
+      <div style="font-size:32px;margin-bottom:6px">🛒</div>
+      <div style="font-weight:800;font-size:13px;color:var(--g800)">Mua hàng ngay</div>
+    </div>
+    <div class="card card-body" style="text-align:center;cursor:pointer" onclick="showCustPage('orders')">
+      <div style="font-size:32px;margin-bottom:6px">📋</div>
+      <div style="font-weight:800;font-size:13px">Đơn của tôi</div>
+      <div style="font-size:11px;color:var(--muted)">${myOrders.length} đơn hàng</div>
+    </div>
+  </div>
+
+  <div class="section-title">🔥 Sản phẩm bán chạy</div>
+  <div class="prod-grid">
+    ${DB.products.slice(0,4).map(p=>prodCardHTML(p)).join('')}
+  </div>
+
+  <div class="section-title">💳 Thông tin tài khoản</div>
+  <div style="padding:0 12px 80px">
+    <div class="card">
+      <div class="card-body">
+        <div class="sum-row"><span class="text-muted">Họ tên:</span><strong>${cu.name}</strong></div>
+        <div class="sum-row"><span class="text-muted">Số điện thoại:</span><strong>${cu.phone}</strong></div>
+        <div class="sum-row"><span class="text-muted">Hạng:</span><span class="badge ${cu.type==='VIP'?'badge-amber':cu.type==='Sỉ'?'badge-blue':'badge-gray'}">${cu.type}</span></div>
+        <div class="sum-row"><span class="text-muted">Tổng chi tiêu:</span><strong class="text-green">${fmt(cu.totalBuy||0)}</strong></div>
+        ${cu.debt>0?`<div class="sum-row"><span class="text-muted">Còn nợ:</span><strong class="text-red">${fmt(cu.debt)}</strong></div>`:''}
+      </div>
+    </div>
+  </div>`;
+}
+
+function prodCardHTML(p){
+  const baseUnit=p.units&&p.units[0]?p.units[0]:{name:'Cái',price:p.price};
+  return `<div class="prod-card" onclick="showProdDetail('${p.id}')">
+    <div class="prod-card-img">${p.icon}</div>
+    <div class="prod-card-body">
+      <div class="prod-card-name">${p.name}</div>
+      <div class="prod-card-price">${fmt(baseUnit.price)}</div>
+      <div class="prod-card-unit">/${baseUnit.name}</div>
+    </div>
+    <button class="prod-card-add" onclick="event.stopPropagation();quickAddToCart('${p.id}')">+</button>
+  </div>`;
+}
+
+// CUSTOMER SHOP
+function renderCustShop(c){
+  const cats=['Tất cả',...new Set(DB.products.map(p=>p.cat))];
+  const activeCat=window._shopCat||'Tất cả';
+  const search=window._shopSearch||'';
+  const prods=DB.products.filter(p=>(activeCat==='Tất cả'||p.cat===activeCat)&&p.name.toLowerCase().includes(search.toLowerCase()));
+  c.innerHTML=`
+  <div style="padding:12px 12px 0;display:flex;gap:8px;align-items:center">
+    <div class="search-wrap flex-1">
+      <span class="search-ico">🔍</span>
+      <input class="form-control" style="width:100%" placeholder="Tìm sản phẩm..." value="${search}" oninput="window._shopSearch=this.value;renderCustShop(document.getElementById('cust-content'))"/>
+    </div>
+  </div>
+  <div style="padding:8px 12px;display:flex;gap:6px;overflow-x:auto;flex-wrap:nowrap">
+    ${cats.map(cat=>`<button class="unit-btn ${activeCat===cat?'active':''}" style="white-space:nowrap" onclick="window._shopCat='${cat}';renderCustShop(document.getElementById('cust-content'))">${cat}</button>`).join('')}
+  </div>
+  <div class="prod-grid">${prods.map(p=>prodCardHTML(p)).join('')||'<p style="padding:32px;text-align:center;color:var(--muted);grid-column:1/-1">Không tìm thấy sản phẩm</p>'}</div>
+  <div style="height:80px"></div>`;
+}
+
+// PRODUCT DETAIL MODAL
+function showProdDetail(id){
+  const p=DB.products.find(x=>x.id===id);if(!p)return;
+  let selUnit=0;
+  const unitHTML=()=>p.units.map((u,i)=>`<button class="unit-btn ${selUnit===i?'active':''}" onclick="window._selUnit_${id}=${i};renderUnitSel('${id}')">${u.name} – ${fmt(u.price)}</button>`).join('');
+  window[`_selUnit_${id}`]=0;
+  showModal(`<div class="modal">
+    <div class="modal-header">
+      <span style="font-size:24px">${p.icon}</span>
+      <h2 style="font-size:15px">${p.name}</h2>
+      <button class="btn btn-ghost btn-icon" onclick="closeModal()">✕</button>
+    </div>
+    <div class="modal-body">
+      <div style="text-align:center;font-size:72px;padding:16px;background:var(--g50);border-radius:var(--radius);margin-bottom:16px">${p.icon}</div>
+      <div style="margin-bottom:6px"><span class="badge badge-green">${p.cat}</span> <span class="badge badge-gray">Kho: ${p.stock}</span></div>
+      <div style="font-weight:800;font-size:15px;margin-bottom:12px">${p.name}</div>
+
+      <div class="form-group mb-12">
+        <label>Chọn đơn vị mua</label>
+        <div class="unit-selector" id="unit-sel-${id}">${unitHTML()}</div>
+      </div>
+      <div class="form-group mb-16">
+        <label>Số lượng</label>
+        <input class="form-control" type="number" id="qty-inp-${id}" value="1" min="1" max="${p.stock}" inputmode="numeric"/>
+      </div>
+      <div style="background:var(--g50);border-radius:var(--radius-sm);padding:12px;margin-bottom:16px">
+        <div class="sum-row"><span class="text-muted">Đơn giá:</span><strong id="unit-price-${id}" class="text-green">${fmt(p.units[0].price)}</strong></div>
+        <div class="sum-row"><span class="text-muted">Mã SKU:</span><span>${p.sku}</span></div>
+        <div class="sum-row"><span class="text-muted">Nhà cung cấp:</span><span>${p.supplier}</span></div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-outline flex-1" onclick="closeModal()">Hủy</button>
+      <button class="btn btn-green flex-1 btn-lg" onclick="addToCartFromDetail('${id}')">🛒 Thêm vào giỏ</button>
+    </div>
+  </div>`);
+  // Re-render unit buttons dynamically
+  window[`renderUnitSel_${id}`]=()=>{
+    const sel=window[`_selUnit_${id}`]||0;
+    document.getElementById(`unit-sel-${id}`).innerHTML=p.units.map((u,i)=>`<button class="unit-btn ${sel===i?'active':''}" onclick="window._selUnit_${id}=${i};window.renderUnitSel_${id}()">${u.name} – ${fmt(u.price)}</button>`).join('');
+    document.getElementById(`unit-price-${id}`).textContent=fmt(p.units[sel].price);
+  };
+  // Patch button to call new render
+  setTimeout(()=>{
+    const btns=document.querySelectorAll(`#unit-sel-${id} .unit-btn`);
+    btns.forEach((b,i)=>{b.onclick=()=>{window[`_selUnit_${id}`]=i;window[`renderUnitSel_${id}`]&&window[`renderUnitSel_${id}`]();}; });
+  },50);
+}
+
+function renderUnitSel(id){if(window[`renderUnitSel_${id}`])window[`renderUnitSel_${id}`]();}
+
+function addToCartFromDetail(id){
+  const p=DB.products.find(x=>x.id===id);if(!p)return;
+  const unitIdx=window[`_selUnit_${id}`]||0;
+  const unit=p.units[unitIdx]||p.units[0];
+  const qty=parseInt(document.getElementById(`qty-inp-${id}`)?.value)||1;
+  addToCart(p,unit,qty);
+  closeModal();
+  showCustPage('cart');
+}
+
+function quickAddToCart(id){
+  const p=DB.products.find(x=>x.id===id);if(!p)return;
+  const unit=p.units[0];
+  addToCart(p,unit,1);
+  toast(`Đã thêm: ${p.name}`);
+}
+
+function addToCart(p,unit,qty){
+  const key=`${p.id}_${unit.name}`;
+  const ex=custCart.find(i=>i.key===key);
+  if(ex)ex.qty+=qty;
+  else custCart.push({key,productId:p.id,name:p.name,icon:p.icon,unit:unit.name,price:unit.price,qty});
+  updateCustCartBadge();
+}
+
+// CUSTOMER CART
+function renderCustCart(c){
+  const total=custCart.reduce((s,i)=>s+i.price*i.qty,0);
+  c.innerHTML=`
+  <div style="padding:16px 16px 0;font-size:17px;font-weight:900">🛒 Giỏ hàng</div>
+  ${custCart.length===0?`<div style="text-align:center;padding:60px 20px;color:var(--muted)"><div style="font-size:56px;margin-bottom:12px">🛒</div>Giỏ hàng trống<br><button class="btn btn-green mt-16" onclick="showCustPage('shop')">Mua hàng ngay</button></div>`:`
+  <div style="padding:12px">
+    ${custCart.map(item=>`
+    <div class="cust-cart-item">
+      <div class="cust-cart-icon">${item.icon||'📦'}</div>
+      <div class="flex-1">
+        <div style="font-weight:700;font-size:13.5px">${item.name}</div>
+        <div class="ci-unit-badge">${item.unit}</div>
+        <div class="qty-ctrl">
+          <button class="qty-btn" onclick="changeCartQty('${item.key}',-1)">−</button>
+          <div class="qty-val">${item.qty}</div>
+          <button class="qty-btn" onclick="changeCartQty('${item.key}',1)">+</button>
+          <button class="btn btn-ghost btn-sm" style="color:var(--red);margin-left:4px" onclick="removeCartItem('${item.key}')">✕</button>
+        </div>
+      </div>
+      <div style="font-weight:900;font-size:14px;color:var(--g800);min-width:80px;text-align:right">${fmt(item.price*item.qty)}</div>
+    </div>`).join('')}
+
+    <div class="card mt-12">
+      <div class="card-body">
+        <div class="sum-row"><span class="text-muted">Tạm tính:</span><strong>${fmt(total)}</strong></div>
+        <div class="sum-row sum-total"><span>Tổng cộng:</span><span>${fmt(total)}</span></div>
+      </div>
+    </div>
+    <div style="margin-top:12px;display:flex;gap:8px">
+      <button class="btn btn-outline flex-1" onclick="custCart=[];updateCustCartBadge();showCustPage('cart')">🗑 Xóa giỏ</button>
+      <button class="btn btn-green flex-1 btn-lg" onclick="showCustCheckout()">Đặt hàng 🚀</button>
+    </div>
+  </div>`}
+  <div style="height:80px"></div>`;
+}
+
+function changeCartQty(key,d){
+  const i=custCart.find(x=>x.key===key);if(!i)return;
+  i.qty+=d;if(i.qty<=0)custCart=custCart.filter(x=>x.key!==key);
+  updateCustCartBadge();showCustPage('cart');
+}
+function removeCartItem(key){custCart=custCart.filter(x=>x.key!==key);updateCustCartBadge();showCustPage('cart');}
+
+// CHECKOUT
+function showCustCheckout(){
+  if(custCart.length===0){toast('Giỏ hàng trống!','error');return;}
+  const total=custCart.reduce((s,i)=>s+i.price*i.qty,0);
+  const s=DB.settings;
+  // Build VietQR URL
+  const qrURL=`https://img.vietqr.io/image/${s.bank}-${s.bankAccount}-compact2.png?amount=${total}&addInfo=DH${Date.now().toString().slice(-6)}&accountName=${encodeURIComponent(s.bankName)}`;
+
+  showModal(`<div class="modal modal-lg">
+    <div class="modal-header"><span>🧾</span><h2>Xác nhận & Thanh toán</h2><button class="btn btn-ghost btn-icon" onclick="closeModal()">✕</button></div>
+    <div class="modal-body">
+      <div style="display:flex;gap:16px;flex-wrap:wrap">
+        <div style="flex:1;min-width:240px">
+          <div style="font-weight:800;margin-bottom:8px;font-size:13px;color:var(--muted);text-transform:uppercase;letter-spacing:.4px">Đơn hàng</div>
+          ${custCart.map(i=>`<div class="sum-row"><span>${i.icon} ${i.name} <span style="font-size:11px;color:var(--muted)">(${i.unit}×${i.qty})</span></span><strong>${fmt(i.price*i.qty)}</strong></div>`).join('')}
+          <div class="sum-row sum-total" style="margin-top:8px"><span>TỔNG:</span><span>${fmt(total)}</span></div>
+
+          <div class="form-group mt-12">
+            <label>Ghi chú đơn hàng</label>
+            <textarea class="form-control" id="order-note" placeholder="VD: Giao buổi sáng, giao kho thôn..."></textarea>
+          </div>
+
+          <div style="margin-top:14px;font-weight:800;font-size:13px;color:var(--muted);text-transform:uppercase;letter-spacing:.4px">Phương thức thanh toán</div>
+          <div style="display:flex;gap:8px;margin-top:8px">
+            <button class="unit-btn active" id="pay-qr" onclick="setPayMode('qr')">QR Chuyển khoản</button>
+            <button class="unit-btn" id="pay-cash" onclick="setPayMode('cash')">Tiền mặt khi nhận</button>
+          </div>
+        </div>
+        <div style="flex:1;min-width:240px" id="qr-section">
+          <div style="font-weight:800;margin-bottom:8px;font-size:13px;color:var(--muted);text-transform:uppercase;letter-spacing:.4px">Quét QR thanh toán</div>
+          <div class="qr-box">
+            <img src="${qrURL}" alt="QR thanh toán" style="width:200px;height:200px;border-radius:8px" onerror="this.outerHTML='<div style=width:200px;height:200px;background:var(--g50);display:flex;align-items:center;justify-content:center;border-radius:8px;color:var(--muted);font-size:13px;border:2px dashed var(--border)>QR code<br>(cần kết nối internet)</div>'"/>
+            <div class="qr-amount-display">${fmt(total)}</div>
+          </div>
+          <div class="qr-bank-info">
+            <div class="qr-info-row"><span class="qr-info-label">Ngân hàng</span><span class="qr-info-val">${s.bank}</span></div>
+            <div class="qr-info-row"><span class="qr-info-label">Số tài khoản</span><span class="qr-info-val" style="cursor:pointer" onclick="navigator.clipboard?.writeText('${s.bankAccount}');toast('Đã copy số TK!')">${s.bankAccount} 📋</span></div>
+            <div class="qr-info-row"><span class="qr-info-label">Chủ TK</span><span class="qr-info-val">${s.bankName}</span></div>
+            <div class="qr-info-row"><span class="qr-info-label">Số tiền</span><span class="qr-info-val text-green">${fmt(total)}</span></div>
+          </div>
+          <div class="alert alert-warn mt-8">⚠️ Chuyển khoản xong chụp màn hình và nhắn Zalo để xác nhận nhanh hơn.</div>
+        </div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-outline" onclick="closeModal()">← Sửa đơn</button>
+      <button class="btn btn-green btn-lg" onclick="confirmCustOrder()">✅ Xác nhận đặt hàng</button>
+    </div>
+  </div>`);
+}
+
+let custPayMode='qr';
+function setPayMode(m){
+  custPayMode=m;
+  ['qr','cash'].forEach(k=>{
+    const el=document.getElementById(`pay-${k}`);
+    if(el)el.classList.toggle('active',k===m);
+  });
+  const qs=document.getElementById('qr-section');
+  if(qs)qs.style.display=m==='qr'?'':'none';
+}
+
+function confirmCustOrder(){
+  const total=custCart.reduce((s,i)=>s+i.price*i.qty,0);
+  const note=document.getElementById('order-note')?.value||'';
+  const order={
+    id:'DH'+Date.now().toString().slice(-6),
+    date:today(),customerId:currentCustomer.id,customerName:currentCustomer.name,
+    items:custCart.map(i=>({...i})),total,payMode:custPayMode,
+    status:'pending',note
+  };
+  DB.custOrders.push(order);
+  currentCustomer.totalBuy=(currentCustomer.totalBuy||0)+total;
+  currentCustomer.points=(currentCustomer.points||0)+Math.floor(total/10000);
+  saveDB();
+  custCart=[];updateCustCartBadge();
+  closeModal();
+  toast('Đặt hàng thành công! Chúng tôi sẽ liên hệ sớm 🎉');
+  showCustPage('orders');
+}
+
+// CUSTOMER ORDERS
+function renderCustOrders(c){
+  const orders=DB.custOrders.filter(o=>o.customerId===currentCustomer.id).reverse();
+  c.innerHTML=`
+  <div style="padding:16px 16px 8px;font-size:17px;font-weight:900">📋 Đơn hàng của tôi</div>
+  <div style="padding:0 12px 80px">
+    ${orders.length===0?`<div style="text-align:center;padding:60px 20px;color:var(--muted)"><div style="font-size:56px;margin-bottom:12px">📋</div>Chưa có đơn hàng nào<br><button class="btn btn-green mt-16" onclick="showCustPage('shop')">Mua hàng ngay</button></div>`
+    :orders.map(o=>`<div class="card mb-12">
+      <div class="card-header" style="font-size:13px">
+        <div>
+          <div style="font-weight:800">#${o.id}</div>
+          <div class="text-muted text-xs">${fmtD(o.date)}</div>
+        </div>
+        <span class="badge ${o.status==='pending'?'badge-amber':o.status==='done'?'badge-green':'badge-gray'}">${o.status==='pending'?'Đang xử lý':o.status==='done'?'Hoàn thành':'Đã hủy'}</span>
+      </div>
+      <div class="card-body">
+        ${o.items.map(i=>`<div class="sum-row text-sm"><span>${i.icon||'📦'} ${i.name} (${i.unit}×${i.qty})</span><strong>${fmt(i.price*i.qty)}</strong></div>`).join('')}
+        <div class="sum-row sum-total" style="font-size:14px"><span>Tổng:</span><span>${fmt(o.total)}</span></div>
+        ${o.note?`<div class="text-xs text-muted mt-8">📝 ${o.note}</div>`:''}
+        <div class="text-xs text-muted mt-4">${o.payMode==='qr'?'💳 Chuyển khoản QR':'💵 Tiền mặt khi nhận'}</div>
+      </div>
+    </div>`).join('')}
+  </div>`;
+}
+
+// CUSTOMER ACCOUNT
+function renderCustAccount(c){
+  const cu=currentCustomer;
+  c.innerHTML=`
+  <div style="padding:20px 16px 80px">
+    <div style="text-align:center;margin-bottom:20px">
+      <div style="width:72px;height:72px;border-radius:50%;background:var(--g800);color:#fff;display:flex;align-items:center;justify-content:center;font-size:32px;font-weight:900;margin:0 auto 10px">${cu.name[0]}</div>
+      <div style="font-size:20px;font-weight:900">${cu.name}</div>
+      <div class="text-muted text-sm">${cu.phone}</div>
+      <span class="badge ${cu.type==='VIP'?'badge-amber':cu.type==='Sỉ'?'badge-blue':'badge-gray'} mt-8">${cu.type}</span>
+    </div>
+    <div class="card mb-12">
+      <div class="card-body">
+        <div class="sum-row"><span class="text-muted">⭐ Điểm tích lũy:</span><strong style="color:var(--amber)">${cu.points||0} điểm</strong></div>
+        <div class="sum-row"><span class="text-muted">💰 Tổng chi tiêu:</span><strong class="text-green">${fmt(cu.totalBuy||0)}</strong></div>
+        <div class="sum-row"><span class="text-muted">📋 Đơn hàng:</span><strong>${DB.custOrders.filter(o=>o.customerId===cu.id).length}</strong></div>
+        ${cu.debt>0?`<div class="sum-row"><span class="text-muted">💳 Còn nợ:</span><strong class="text-red">${fmt(cu.debt)}</strong></div>`:''}
+      </div>
+    </div>
+    <div class="card mb-12">
+      <div class="card-body">
+        <div class="sum-row"><span class="text-muted">📞 Hotline cửa hàng:</span><a href="tel:${DB.settings.phone}" style="font-weight:700;color:var(--g800)">${DB.settings.phone}</a></div>
+        <div class="sum-row"><span class="text-muted">📍 Địa chỉ:</span><span style="font-size:12.5px">${DB.settings.address}</span></div>
+      </div>
+    </div>
+    <button class="btn btn-outline w-full" onclick="custLogout()">🚪 Đăng xuất</button>
+  </div>`;
+}
+
+function custLogout(){
+  currentCustomer=null;custCart=[];
+  document.getElementById('screen-customer').classList.add('hidden');
+  document.getElementById('screen-login').classList.remove('hidden');
+  document.getElementById('zalo-float').classList.add('hidden');
+}
+
+// ============================================================
+// ADMIN APP
+// ============================================================
+let adminPage='pos';
+function showAdminPage(page){
+  adminPage=page;
+  document.querySelectorAll('.sidebar-item').forEach(el=>el.classList.remove('active'));
+  document.querySelectorAll('.sidebar-item').forEach(el=>{if(el.getAttribute('onclick')?.includes(`'${page}'`))el.classList.add('active');});
+  // close sidebar on mobile
+  if(window.innerWidth<768)document.getElementById('admin-sidebar').classList.remove('open');
+  const c=document.getElementById('admin-content');
+  ({pos:renderAdminPOS,dashboard:renderAdminDash,products:renderAdminProducts,inventory:renderAdminInventory,customers:renderAdminCustomers,debt:renderAdminDebt,invoices:renderAdminInvoices,settings:renderAdminSettings}[page]||renderAdminDash)(c);
+}
+function toggleSidebar(){document.getElementById('admin-sidebar').classList.toggle('open');}
+
+/* ---- POS ---- */
+let posCart=[], posCatFilter='all', posSearchStr='', posCustomerId='';
+
+function renderAdminPOS(c){
+  c.innerHTML=`
+  <div class="admin-page-header">
+    <span>🛒</span><h1>Bán hàng</h1>
+    <div style="display:flex;gap:8px;flex-wrap:wrap">
+      <div class="search-wrap"><span class="search-ico">🔍</span><input placeholder="Tìm SP..." style="width:160px" value="${posSearchStr}" oninput="posSearchStr=this.value;renderPOSProducts()"/></div>
+      <select class="form-control" style="width:150px" onchange="posCatFilter=this.value;renderPOSProducts()">
+        <option value="all">Tất cả</option>
+        ${[...new Set(DB.products.map(p=>p.cat))].map(c=>`<option value="${c}" ${posCatFilter===c?'selected':''}>${c}</option>`).join('')}
+      </select>
+    </div>
+  </div>
+  <div class="pos-wrap">
+    <div class="pos-left" id="pos-prods"></div>
+    <div class="pos-right">
+      <div class="cart-header">🛒 Giỏ hàng <span style="background:var(--amber);color:#fff;border-radius:20px;padding:1px 8px;font-size:11px;margin-left:4px" id="pos-cart-count">${posCart.length}</span></div>
+      <div style="padding:8px">
+        <select class="form-control" onchange="posCustomerId=this.value">
+          <option value="">👤 Khách lẻ</option>
+          ${DB.customers.map(cu=>`<option value="${cu.id}" ${posCustomerId===cu.id?'selected':''}>${cu.name} – ${cu.phone}</option>`).join('')}
+        </select>
+      </div>
+      <div class="cart-items" id="pos-cart-items" style="flex:1;overflow-y:auto"></div>
+      <div class="cart-footer" id="pos-cart-footer"></div>
+    </div>
+  </div>`;
+  renderPOSProducts();
+  renderPOSCart();
+}
+
+function renderPOSProducts(){
+  const prods=DB.products.filter(p=>(posCatFilter==='all'||p.cat===posCatFilter)&&p.name.toLowerCase().includes(posSearchStr.toLowerCase()));
+  const el=document.getElementById('pos-prods');if(!el)return;
+  el.innerHTML=`<div class="pos-prod-grid">${prods.map(p=>`
+    <div class="pos-prod-card" onclick="showPOSProdSelect('${p.id}')">
+      <div class="p-icon">${p.icon}</div>
+      <div class="p-name">${p.name}</div>
+      <div class="p-price">${fmt(p.units[0]?.price||p.price)}</div>
+      <div class="p-stock ${p.stock<=p.minStock?'text-red':'text-muted'}">Kho: ${p.stock}</div>
+    </div>`).join('')||'<div style="grid-column:1/-1;text-align:center;padding:32px;color:var(--muted)">Không tìm thấy</div>'}
+  </div>`;
+}
+
+function showPOSProdSelect(id){
+  const p=DB.products.find(x=>x.id===id);if(!p)return;
+  showModal(`<div class="modal modal-sm">
+    <div class="modal-header"><span>${p.icon}</span><h2 style="font-size:14px">${p.name}</h2><button class="btn btn-ghost btn-icon" onclick="closeModal()">✕</button></div>
+    <div class="modal-body">
+      <div class="form-group mb-12">
+        <label>Chọn đơn vị</label>
+        <div class="unit-selector" id="pos-unit-sel">
+          ${p.units.map((u,i)=>`<button class="unit-btn ${i===0?'active':''}" onclick="posSelUnit=${i};renderPOSUnitSel('${id}')">${u.name} – ${fmt(u.price)}</button>`).join('')}
+        </div>
+      </div>
+      <div class="form-group">
+        <label>Số lượng</label>
+        <input class="form-control" type="number" id="pos-qty-inp" value="1" min="1" max="${p.stock}" inputmode="numeric"/>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-outline" onclick="closeModal()">Hủy</button>
+      <button class="btn btn-green btn-lg" onclick="posAddFromModal('${id}')">+ Thêm vào giỏ</button>
+    </div>
+  </div>`);
+  window.posSelUnit=0;
+}
+
+function renderPOSUnitSel(id){
+  const p=DB.products.find(x=>x.id===id);if(!p)return;
+  const sel=window.posSelUnit||0;
+  document.getElementById('pos-unit-sel').innerHTML=p.units.map((u,i)=>`<button class="unit-btn ${i===sel?'active':''}" onclick="posSelUnit=${i};renderPOSUnitSel('${id}')">${u.name} – ${fmt(u.price)}</button>`).join('');
+}
+
+function posAddFromModal(id){
+  const p=DB.products.find(x=>x.id===id);if(!p)return;
+  const unitIdx=window.posSelUnit||0;
+  const unit=p.units[unitIdx]||p.units[0];
+  const qty=parseInt(document.getElementById('pos-qty-inp')?.value)||1;
+  if(p.stock<qty){toast('Không đủ tồn kho!','error');return;}
+  const key=`${p.id}_${unit.name}`;
+  const ex=posCart.find(i=>i.key===key);
+  if(ex)ex.qty+=qty;else posCart.push({key,productId:p.id,name:p.name,icon:p.icon,unit:unit.name,price:unit.price,qty});
+  closeModal();renderPOSCart();
+}
+
+function posChangeQty(key,d){
+  const i=posCart.find(x=>x.key===key);if(!i)return;
+  i.qty+=d;if(i.qty<=0)posCart=posCart.filter(x=>x.key!==key);
+  renderPOSCart();
+}
+function posRemove(key){posCart=posCart.filter(x=>x.key!==key);renderPOSCart();}
+
+function renderPOSCart(){
+  const ci=document.getElementById('pos-cart-items');
+  const cf=document.getElementById('pos-cart-footer');
+  const cc=document.getElementById('pos-cart-count');
+  if(cc)cc.textContent=posCart.reduce((s,i)=>s+i.qty,0);
+  if(!ci||!cf)return;
+  ci.innerHTML=posCart.length===0?`<div style="text-align:center;padding:24px;color:var(--muted)">Chưa có sản phẩm</div>`
+  :posCart.map(item=>`
+    <div class="cart-item">
+      <div class="flex-1">
+        <div class="ci-name">${item.icon} ${item.name}</div>
+        <div class="ci-unit-badge">${item.unit}</div>
+      </div>
+      <div class="qty-ctrl" style="margin-top:0;gap:4px">
+        <button class="qty-btn" onclick="posChangeQty('${item.key}',-1)">−</button>
+        <div class="qty-val">${item.qty}</div>
+        <button class="qty-btn" onclick="posChangeQty('${item.key}',1)">+</button>
+      </div>
+      <div style="font-weight:800;font-size:13px;color:var(--g800);min-width:70px;text-align:right">${fmt(item.price*item.qty)}</div>
+      <button class="btn btn-ghost btn-sm" style="color:var(--red);padding:2px 4px" onclick="posRemove('${item.key}')">✕</button>
+    </div>`).join('');
+
+  const sub=posCart.reduce((s,i)=>s+i.price*i.qty,0);
+  cf.innerHTML=`
+    <div class="sum-row"><span class="text-muted">Tạm tính:</span><span>${fmt(sub)}</span></div>
+    <div class="sum-row sum-total"><span>Tổng cộng:</span><span>${fmt(sub)}</span></div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px">
+      <div class="form-group" style="margin:0">
+        <label style="font-size:10px">KHÁCH ĐƯA</label>
+        <input id="pos-cash" type="number" class="form-control" value="${sub}" oninput="updatePOSChange()"/>
+      </div>
+      <div class="form-group" style="margin:0">
+        <label style="font-size:10px">TIỀN THỐI</label>
+        <input id="pos-change" class="form-control" readonly style="background:var(--g50);font-weight:800;color:var(--g800)" value="${fmt(0)}"/>
+      </div>
+    </div>
+    <div style="display:flex;gap:6px;margin-top:10px">
+      <button class="btn btn-outline btn-sm" onclick="showPOSQR()">📱 QR</button>
+      <button class="btn btn-green flex-1" onclick="posCheckout(false)" ${posCart.length===0?'disabled':''}>✅ Thanh toán</button>
+    </div>
+    <button class="btn btn-outline w-full mt-8" style="font-size:12px" onclick="posCheckout(true)" ${posCart.length===0?'disabled':''}>💳 Ghi nợ</button>
+    <button class="btn btn-ghost w-full" style="font-size:12px;color:var(--red)" onclick="posCart=[];renderPOSCart()">🗑 Hủy đơn</button>`;
+  updatePOSChange();
+}
+
+function updatePOSChange(){
+  const sub=posCart.reduce((s,i)=>s+i.price*i.qty,0);
+  const cash=parseFloat(document.getElementById('pos-cash')?.value)||0;
+  const el=document.getElementById('pos-change');
+  if(el)el.value=fmt(Math.max(0,cash-sub));
+}
+
+function showPOSQR(){
+  const total=posCart.reduce((s,i)=>s+i.price*i.qty,0);
+  if(total===0){toast('Giỏ hàng trống!','error');return;}
+  const s=DB.settings;
+  const qrURL=`https://img.vietqr.io/image/${s.bank}-${s.bankAccount}-compact2.png?amount=${total}&addInfo=TT${Date.now().toString().slice(-6)}&accountName=${encodeURIComponent(s.bankName)}`;
+  showModal(`<div class="modal modal-sm">
+    <div class="modal-header"><span>📱</span><h2>QR Thanh toán</h2><button class="btn btn-ghost btn-icon" onclick="closeModal()">✕</button></div>
+    <div class="modal-body">
+      <div class="qr-box">
+        <img src="${qrURL}" style="width:200px;height:200px;border-radius:8px" onerror="this.outerHTML='<div style=width:200px;height:200px;background:var(--g50);display:flex;align-items:center;justify-content:center;border-radius:8px;color:var(--muted);font-size:12px;text-align:center;border:2px dashed var(--border)>QR (cần internet)</div>'"/>
+        <div class="qr-amount-display">${fmt(total)}</div>
+      </div>
+      <div class="qr-bank-info mt-12">
+        <div class="qr-info-row"><span class="qr-info-label">Ngân hàng</span><span class="qr-info-val">${s.bank}</span></div>
+        <div class="qr-info-row"><span class="qr-info-label">Số TK</span><span class="qr-info-val" style="cursor:pointer" onclick="navigator.clipboard?.writeText('${s.bankAccount}');toast('Đã copy!')">${s.bankAccount} 📋</span></div>
+        <div class="qr-info-row"><span class="qr-info-label">Chủ TK</span><span class="qr-info-val">${s.bankName}</span></div>
+        <div class="qr-info-row"><span class="qr-info-label">Số tiền</span><span class="qr-info-val text-green">${fmt(total)}</span></div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-outline flex-1" onclick="closeModal()">Đóng</button>
+      <button class="btn btn-green flex-1" onclick="closeModal();posCheckout(false)">✅ Xác nhận đã nhận tiền</button>
+    </div>
+  </div>`);
+}
+
+function posCheckout(isDebt){
+  if(posCart.length===0){toast('Giỏ hàng trống!','error');return;}
+  const total=posCart.reduce((s,i)=>s+i.price*i.qty,0);
+  const cash=isDebt?0:(parseFloat(document.getElementById('pos-cash')?.value)||total);
+  const debt=Math.max(0,total-cash);
+  const customer=DB.customers.find(c=>c.id===posCustomerId);
+  if(isDebt&&!posCustomerId){toast('Chọn khách hàng để ghi nợ!','error');return;}
+  const inv={
+    id:'HD'+Date.now().toString().slice(-6),date:today(),
+    customerId:posCustomerId,customerName:customer?.name||'Khách lẻ',
+    items:posCart.map(i=>({productId:i.productId,name:i.name,qty:i.qty,unit:i.unit,price:i.price})),
+    total,paid:cash,debt,status:debt>0?'partial':'paid'
+  };
+  DB.invoices.unshift(inv);
+  // Update stock (rough: per bag unit)
+  posCart.forEach(item=>{
+    const p=DB.products.find(x=>x.id===item.productId);
+    if(p){
+      const u=p.units.find(u=>u.name===item.unit);
+      p.stock-=Math.ceil(item.qty/(u?.ratio||1));
+      if(p.stock<0)p.stock=0;
+    }
+  });
+  if(customer){customer.debt=(customer.debt||0)+debt;customer.totalBuy=(customer.totalBuy||0)+total;customer.points=(customer.points||0)+Math.floor(total/10000);}
+  saveDB();
+  toast(`Thanh toán thành công! ${inv.id}`);
+  if(debt>0)toast(`Ghi nợ: ${fmt(debt)}`,'warning');
+  posCart=[];posCustomerId='';
+  renderPOSCart();renderPOSProducts();
+}
+
+/* ---- DASHBOARD ---- */
+function renderAdminDash(c){
+  const todayInvs=DB.invoices.filter(i=>i.date===today());
+  const todayRev=todayInvs.reduce((s,i)=>s+i.paid,0);
+  const totalRev=DB.invoices.reduce((s,i)=>s+i.paid,0);
+  const totalDebt=DB.customers.reduce((s,c)=>s+(c.debt||0),0);
+  const lowStock=DB.products.filter(p=>p.stock<=p.minStock);
+  const pendingOrders=DB.custOrders.filter(o=>o.status==='pending');
+
+  const months=['T1','T2','T3','T4','T5','T6','T7','T8','T9','T10','T11','T12'];
+  const mData=months.map((_,mi)=>DB.invoices.filter(i=>new Date(i.date).getMonth()===mi).reduce((s,i)=>s+i.paid,0));
+  const maxV=Math.max(...mData,1);
+
+  c.innerHTML=`
+  <div class="admin-page-header"><span>📊</span><h1>Tổng quan</h1></div>
+  <div class="page-body-scroll">
+    <div class="stat-grid">
+      <div class="stat-card"><div class="s-icon-wrap">💰</div><div class="s-label">Hôm nay</div><div class="s-val" style="font-size:17px;color:var(--g800)">${fmt(todayRev)}</div><div class="s-sub">${todayInvs.length} hóa đơn</div></div>
+      <div class="stat-card"><div class="s-icon-wrap">📈</div><div class="s-label">Tổng DT</div><div class="s-val" style="font-size:17px">${fmt(totalRev)}</div><div class="s-sub">${DB.invoices.length} HĐ</div></div>
+      <div class="stat-card"><div class="s-icon-wrap">💳</div><div class="s-label">Công nợ</div><div class="s-val" style="font-size:17px;color:var(--red)">${fmt(totalDebt)}</div><div class="s-sub">${DB.customers.filter(c=>c.debt>0).length} khách</div></div>
+      <div class="stat-card"><div class="s-icon-wrap">📦</div><div class="s-label">Đơn chờ</div><div class="s-val" style="color:${pendingOrders.length?'var(--amber)':'var(--g800)'}">${pendingOrders.length}</div><div class="s-sub">Cần xử lý</div></div>
+    </div>
+
+    ${pendingOrders.length?`<div class="alert alert-warn mb-16">⚠️ Có <strong>${pendingOrders.length}</strong> đơn online chờ xử lý! <button class="btn btn-outline btn-sm" onclick="showAdminPage('invoices')">Xem ngay →</button></div>`:''}
+    ${lowStock.length?`<div class="alert alert-warn mb-16">📦 <strong>${lowStock.length}</strong> sản phẩm sắp hết: ${lowStock.map(p=>p.name).join(', ')}</div>`:''}
+
+    <div style="display:grid;grid-template-columns:2fr 1fr;gap:16px;margin-bottom:16px">
+      <div class="card">
+        <div class="card-header">📊 Doanh thu ${new Date().getFullYear()}</div>
+        <div style="padding:16px">
+          <div class="bar-chart">
+            ${mData.map((v,i)=>`<div class="bar-col">
+              <div class="bar-val-txt">${v>0?fmt(v).replace('đ','').replace(/\./g,'').slice(0,-3)+'k':''}</div>
+              <div class="bar-fill" style="height:${Math.max(2,(v/maxV)*100)}%"></div>
+              <div class="bar-lbl">${months[i]}</div>
+            </div>`).join('')}
+          </div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-header">⚠️ Sắp hết hàng</div>
+        <div class="card-body">
+          ${lowStock.length?lowStock.map(p=>`<div style="display:flex;justify-content:space-between;align-items:center;padding:7px 0;border-bottom:1px solid var(--border)"><div style="font-size:13px;font-weight:600">${p.icon} ${p.name}</div><span class="badge badge-red">Còn ${p.stock}</span></div>`).join('')
+          :'<div class="text-center text-muted" style="padding:20px">✅ Đủ hàng</div>'}
+        </div>
+      </div>
+    </div>
+  </div>`;
+}
+
+/* ---- PRODUCTS ---- */
+function renderAdminProducts(c){
+  c.innerHTML=`
+  <div class="admin-page-header">
+    <span>📦</span><h1>Sản phẩm</h1>
+    <div style="display:flex;gap:8px;align-items:center">
+      <div class="search-wrap"><span class="search-ico">🔍</span><input id="prod-search" placeholder="Tìm..." style="width:160px" oninput="renderAdminProductsTable()"/></div>
+      <button class="btn btn-green btn-sm" onclick="showAddProduct()">+ Thêm</button>
+    </div>
+  </div>
+  <div class="page-body-scroll">
+    <div class="card">
+      <div class="tbl-wrap" id="prod-table-wrap"></div>
+    </div>
+  </div>`;
+  renderAdminProductsTable();
+}
+function renderAdminProductsTable(){
+  const search=(document.getElementById('prod-search')?.value||'').toLowerCase();
+  const prods=DB.products.filter(p=>p.name.toLowerCase().includes(search)||p.sku.toLowerCase().includes(search));
+  const el=document.getElementById('prod-table-wrap');if(!el)return;
+  el.innerHTML=`<table>
+    <thead><tr><th>#</th><th>Sản phẩm</th><th>Đơn vị bán</th><th>Tồn kho</th><th>Giá vốn</th><th>Trạng thái</th><th></th></tr></thead>
+    <tbody>${prods.map((p,i)=>`
+    <tr>
+      <td>${i+1}</td>
+      <td><div style="font-weight:700">${p.icon} ${p.name}</div><div class="text-xs text-muted">${p.sku} | ${p.cat}</div></td>
+      <td>${p.units.map(u=>`<span class="badge badge-gray" style="margin:1px">${u.name}: ${fmt(u.price)}</span>`).join('')}</td>
+      <td class="${p.stock<=p.minStock?'text-red font-bold':'text-green'}">${p.stock} ${p.stock<=p.minStock?'⚠️':''}</td>
+      <td>${fmt(p.cost)}</td>
+      <td><span class="badge ${p.stock<=p.minStock?'badge-red':'badge-green'}">${p.stock<=p.minStock?'Sắp hết':'Còn hàng'}</span></td>
+      <td><div style="display:flex;gap:4px">
+        <button class="btn btn-outline btn-sm" onclick="showEditProduct('${p.id}')">✏️</button>
+        <button class="btn btn-red btn-sm" onclick="deleteProduct('${p.id}')">🗑</button>
+      </div></td>
+    </tr>`).join('')}
+    </tbody></table>`;
+}
+
+function showAddProduct(){
+  showModal(`<div class="modal modal-lg">
+    <div class="modal-header"><span>📦</span><h2>Thêm sản phẩm</h2><button class="btn btn-ghost btn-icon" onclick="closeModal()">✕</button></div>
+    <div class="modal-body">
+      <div class="grid-2">
+        <div class="form-group"><label>Tên sản phẩm *</label><input class="form-control" id="np-name"/></div>
+        <div class="form-group"><label>SKU *</label><input class="form-control" id="np-sku"/></div>
+      </div>
+      <div class="grid-2 mt-12">
+        <div class="form-group"><label>Danh mục</label><input class="form-control" id="np-cat" placeholder="VD: Phân đạm"/></div>
+        <div class="form-group"><label>Icon</label><input class="form-control" id="np-icon" value="📦"/></div>
+      </div>
+      <div class="grid-2 mt-12">
+        <div class="form-group"><label>Giá vốn (đ)</label><input class="form-control" type="number" id="np-cost" placeholder="0"/></div>
+        <div class="form-group"><label>Nhà cung cấp</label><input class="form-control" id="np-sup"/></div>
+      </div>
+      <div class="grid-2 mt-12">
+        <div class="form-group"><label>Tồn kho</label><input class="form-control" type="number" id="np-stock" placeholder="0"/></div>
+        <div class="form-group"><label>Tồn tối thiểu</label><input class="form-control" type="number" id="np-min" placeholder="10"/></div>
+      </div>
+      <div style="margin-top:16px;font-weight:700;font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.4px">Đơn vị bán (thêm nhiều loại)</div>
+      <div id="units-container" style="margin-top:8px"></div>
+      <button class="btn btn-outline btn-sm mt-8" onclick="addUnitRow()">+ Thêm đơn vị</button>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-outline" onclick="closeModal()">Hủy</button>
+      <button class="btn btn-green" onclick="saveNewProduct()">💾 Lưu</button>
+    </div>
+  </div>`);
+  window._newUnits=[{name:'Bao 50kg',ratio:1,price:0}];
+  renderUnitRows();
+}
+
+function addUnitRow(){window._newUnits.push({name:'',ratio:1,price:0});renderUnitRows();}
+function renderUnitRows(){
+  const c=document.getElementById('units-container');if(!c)return;
+  c.innerHTML=window._newUnits.map((u,i)=>`
+  <div style="display:flex;gap:8px;align-items:flex-end;margin-bottom:8px">
+    <div class="form-group flex-1" style="margin:0"><label style="font-size:10px">Tên ĐVT</label><input class="form-control" value="${u.name}" placeholder="VD: Bao 50kg" oninput="window._newUnits[${i}].name=this.value"/></div>
+    <div class="form-group" style="margin:0;width:80px"><label style="font-size:10px">Quy đổi</label><input class="form-control" type="number" value="${u.ratio}" title="1 bao = X kg" oninput="window._newUnits[${i}].ratio=+this.value"/></div>
+    <div class="form-group flex-1" style="margin:0"><label style="font-size:10px">Giá bán</label><input class="form-control" type="number" value="${u.price||''}" placeholder="0" oninput="window._newUnits[${i}].price=+this.value"/></div>
+    ${i>0?`<button class="btn btn-red btn-sm btn-icon" onclick="window._newUnits.splice(${i},1);renderUnitRows()">✕</button>`:''} 
+  </div>`).join('');
+}
+
+function saveNewProduct(){
+  const name=document.getElementById('np-name').value.trim();
+  const sku=document.getElementById('np-sku').value.trim();
+  if(!name||!sku){toast('Nhập tên và SKU!','error');return;}
+  DB.products.push({
+    id:'p'+uid(),name,sku,cat:document.getElementById('np-cat').value||'Khác',
+    icon:document.getElementById('np-icon').value||'📦',
+    cost:+document.getElementById('np-cost').value||0,
+    supplier:document.getElementById('np-sup').value||'',
+    stock:+document.getElementById('np-stock').value||0,
+    minStock:+document.getElementById('np-min').value||10,
+    price:window._newUnits[0]?.price||0,
+    units:window._newUnits.filter(u=>u.name)
+  });
+  saveDB();closeModal();toast('Đã thêm sản phẩm!');
+  renderAdminProducts(document.getElementById('admin-content'));
+}
+
+function showEditProduct(id){
+  const p=DB.products.find(x=>x.id===id);if(!p)return;
+  window._editUnits=JSON.parse(JSON.stringify(p.units));
+  showModal(`<div class="modal modal-lg">
+    <div class="modal-header"><span>${p.icon}</span><h2>Sửa: ${p.name}</h2><button class="btn btn-ghost btn-icon" onclick="closeModal()">✕</button></div>
+    <div class="modal-body">
+      <div class="grid-2">
+        <div class="form-group"><label>Tên *</label><input class="form-control" id="ep-name" value="${p.name}"/></div>
+        <div class="form-group"><label>SKU</label><input class="form-control" id="ep-sku" value="${p.sku}"/></div>
+      </div>
+      <div class="grid-2 mt-12">
+        <div class="form-group"><label>Danh mục</label><input class="form-control" id="ep-cat" value="${p.cat}"/></div>
+        <div class="form-group"><label>Icon</label><input class="form-control" id="ep-icon" value="${p.icon}"/></div>
+      </div>
+      <div class="grid-2 mt-12">
+        <div class="form-group"><label>Giá vốn</label><input class="form-control" type="number" id="ep-cost" value="${p.cost}"/></div>
+        <div class="form-group"><label>Nhà cung cấp</label><input class="form-control" id="ep-sup" value="${p.supplier}"/></div>
+      </div>
+      <div class="grid-2 mt-12">
+        <div class="form-group"><label>Tồn kho</label><input class="form-control" type="number" id="ep-stock" value="${p.stock}"/></div>
+        <div class="form-group"><label>Tồn tối thiểu</label><input class="form-control" type="number" id="ep-min" value="${p.minStock}"/></div>
+      </div>
+      <div style="margin-top:16px;font-weight:700;font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.4px">Đơn vị bán</div>
+      <div id="edit-units-container" style="margin-top:8px"></div>
+      <button class="btn btn-outline btn-sm mt-8" onclick="addEditUnitRow()">+ Thêm đơn vị</button>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-outline" onclick="closeModal()">Hủy</button>
+      <button class="btn btn-green" onclick="saveEditProduct('${id}')">💾 Cập nhật</button>
+    </div>
+  </div>`);
+  renderEditUnitRows();
+}
+function addEditUnitRow(){window._editUnits.push({name:'',ratio:1,price:0});renderEditUnitRows();}
+function renderEditUnitRows(){
+  const c=document.getElementById('edit-units-container');if(!c)return;
+  c.innerHTML=window._editUnits.map((u,i)=>`
+  <div style="display:flex;gap:8px;align-items:flex-end;margin-bottom:8px">
+    <div class="form-group flex-1" style="margin:0"><label style="font-size:10px">Tên ĐVT</label><input class="form-control" value="${u.name}" oninput="window._editUnits[${i}].name=this.value"/></div>
+    <div class="form-group" style="margin:0;width:80px"><label style="font-size:10px">Quy đổi</label><input class="form-control" type="number" value="${u.ratio}" oninput="window._editUnits[${i}].ratio=+this.value"/></div>
+    <div class="form-group flex-1" style="margin:0"><label style="font-size:10px">Giá bán</label><input class="form-control" type="number" value="${u.price}" oninput="window._editUnits[${i}].price=+this.value"/></div>
+    ${i>0?`<button class="btn btn-red btn-sm btn-icon" onclick="window._editUnits.splice(${i},1);renderEditUnitRows()">✕</button>`:''}
+  </div>`).join('');
+}
+function saveEditProduct(id){
+  const p=DB.products.find(x=>x.id===id);if(!p)return;
+  p.name=document.getElementById('ep-name').value;p.sku=document.getElementById('ep-sku').value;
+  p.cat=document.getElementById('ep-cat').value;p.icon=document.getElementById('ep-icon').value;
+  p.cost=+document.getElementById('ep-cost').value;p.supplier=document.getElementById('ep-sup').value;
+  p.stock=+document.getElementById('ep-stock').value;p.minStock=+document.getElementById('ep-min').value;
+  p.units=window._editUnits.filter(u=>u.name);p.price=p.units[0]?.price||p.price;
+  saveDB();closeModal();toast('Đã cập nhật!');
+  renderAdminProducts(document.getElementById('admin-content'));
+}
+function deleteProduct(id){
+  if(!confirm('Xóa sản phẩm?'))return;
+  DB.products=DB.products.filter(x=>x.id!==id);saveDB();toast('Đã xóa','warning');
+  renderAdminProducts(document.getElementById('admin-content'));
+}
+
+/* ---- INVENTORY ---- */
+function renderAdminInventory(c){
+  c.innerHTML=`
+  <div class="admin-page-header"><span>🏭</span><h1>Nhập kho</h1><button class="btn btn-green btn-sm" onclick="showAddImport()">+ Phiếu nhập</button></div>
+  <div class="page-body-scroll">
+    <div class="stat-grid" style="grid-template-columns:repeat(3,1fr);margin-bottom:16px">
+      <div class="stat-card"><div class="s-label">Tổng sản phẩm</div><div class="s-val">${DB.products.length}</div></div>
+      <div class="stat-card"><div class="s-label">Sắp hết hàng</div><div class="s-val text-red">${DB.products.filter(p=>p.stock<=p.minStock).length}</div></div>
+      <div class="stat-card"><div class="s-label">Giá trị tồn kho</div><div class="s-val" style="font-size:16px">${fmt(DB.products.reduce((s,p)=>s+p.cost*p.stock,0))}</div></div>
+    </div>
+    <div class="card mb-16">
+      <div class="card-header">📋 Lịch sử nhập kho</div>
+      <div class="tbl-wrap"><table>
+        <thead><tr><th>Mã phiếu</th><th>Ngày</th><th>NCC</th><th>Sản phẩm</th><th>Tổng tiền</th></tr></thead>
+        <tbody>${DB.stockImports.map(i=>`<tr><td><code>${i.id}</code></td><td>${fmtD(i.date)}</td><td>${i.supplier}</td><td>${i.items.map(x=>`${x.name}(${x.qty})`).join(', ')}</td><td><strong>${fmt(i.total)}</strong></td></tr>`).join('')||'<tr><td colspan="5" class="text-center text-muted" style="padding:24px">Chưa có phiếu nhập</td></tr>'}
+        </tbody>
+      </table></div>
+    </div>
+    <div class="card">
+      <div class="card-header">📦 Tồn kho hiện tại</div>
+      <div class="tbl-wrap"><table>
+        <thead><tr><th>Sản phẩm</th><th>Đơn vị</th><th>Tồn kho</th><th>Tối thiểu</th><th>Trạng thái</th></tr></thead>
+        <tbody>${DB.products.map(p=>`<tr><td><strong>${p.icon} ${p.name}</strong></td><td>${p.units.map(u=>u.name).join(', ')}</td><td class="${p.stock<=p.minStock?'text-red font-bold':'text-green'}">${p.stock}</td><td>${p.minStock}</td><td><span class="badge ${p.stock<=p.minStock?'badge-red':'badge-green'}">${p.stock<=p.minStock?'⚠️ Sắp hết':'✅ Đủ'}</span></td></tr>`).join('')}
+        </tbody>
+      </table></div>
+    </div>
+  </div>`;
+}
+let _impItems=[];
+function showAddImport(){
+  _impItems=[{productId:'',qty:0,cost:0}];
+  showModal(`<div class="modal modal-lg">
+    <div class="modal-header"><span>🏭</span><h2>Phiếu nhập kho</h2><button class="btn btn-ghost btn-icon" onclick="closeModal()">✕</button></div>
+    <div class="modal-body">
+      <div class="grid-2">
+        <div class="form-group"><label>Nhà cung cấp *</label><input class="form-control" id="imp-sup"/></div>
+        <div class="form-group"><label>Ngày nhập</label><input class="form-control" type="date" id="imp-date" value="${today()}"/></div>
+      </div>
+      <div style="margin-top:12px;font-weight:700;font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.4px;margin-bottom:8px">Sản phẩm nhập</div>
+      <div id="imp-rows"></div>
+      <button class="btn btn-outline btn-sm mt-8" onclick="_impItems.push({productId:'',qty:0,cost:0});renderImpRows()">+ Thêm dòng</button>
+    </div>
+    <div class="modal-footer">
+      <div id="imp-total-display" style="flex:1;font-weight:800;font-size:15px;color:var(--g800)">Tổng: 0đ</div>
+      <button class="btn btn-outline" onclick="closeModal()">Hủy</button>
+      <button class="btn btn-green" onclick="saveImport()">💾 Lưu phiếu</button>
+    </div>
+  </div>`);
+  renderImpRows();
+}
+function renderImpRows(){
+  const c=document.getElementById('imp-rows');if(!c)return;
+  c.innerHTML=_impItems.map((item,i)=>`
+  <div style="display:flex;gap:6px;align-items:flex-end;margin-bottom:8px;flex-wrap:wrap">
+    <div class="form-group" style="margin:0;flex:2;min-width:140px"><label style="font-size:10px">Sản phẩm</label>
+      <select class="form-control" onchange="_impItems[${i}].productId=this.value;const p=DB.products.find(x=>x.id===this.value);if(p)_impItems[${i}].cost=p.cost;renderImpRows()">
+        <option value="">-- Chọn --</option>
+        ${DB.products.map(p=>`<option value="${p.id}" ${item.productId===p.id?'selected':''}>${p.name}</option>`).join('')}
+      </select></div>
+    <div class="form-group" style="margin:0;width:80px"><label style="font-size:10px">SL (bao)</label><input class="form-control" type="number" value="${item.qty||''}" oninput="_impItems[${i}].qty=+this.value;calcImpTotal()"/></div>
+    <div class="form-group" style="margin:0;flex:1;min-width:100px"><label style="font-size:10px">Giá nhập/bao</label><input class="form-control" type="number" value="${item.cost||''}" oninput="_impItems[${i}].cost=+this.value;calcImpTotal()"/></div>
+    <button class="btn btn-red btn-sm btn-icon" onclick="_impItems.splice(${i},1);renderImpRows()">✕</button>
+  </div>`).join('');
+  calcImpTotal();
+}
+function calcImpTotal(){
+  const total=_impItems.reduce((s,i)=>s+(i.qty||0)*(i.cost||0),0);
+  const el=document.getElementById('imp-total-display');
+  if(el)el.textContent=`Tổng: ${fmt(total)}`;
+}
+function saveImport(){
+  const sup=document.getElementById('imp-sup')?.value.trim();
+  const date=document.getElementById('imp-date')?.value;
+  const valid=_impItems.filter(i=>i.productId&&i.qty>0);
+  if(!sup){toast('Nhập tên NCC!','error');return;}
+  if(!valid.length){toast('Thêm ít nhất 1 SP!','error');return;}
+  const total=valid.reduce((s,i)=>s+i.qty*i.cost,0);
+  const imp={id:'NK'+Date.now().toString().slice(-6),date,supplier:sup,
+    items:valid.map(i=>{const p=DB.products.find(x=>x.id===i.productId);return{productId:i.productId,name:p?.name||'',qty:i.qty,cost:i.cost};}),total};
+  DB.stockImports.unshift(imp);
+  valid.forEach(item=>{const p=DB.products.find(x=>x.id===item.productId);if(p){p.stock+=item.qty;p.cost=item.cost;}});
+  saveDB();closeModal();toast(`Nhập kho thành công! ${fmt(total)}`);
+  renderAdminInventory(document.getElementById('admin-content'));
+}
+
+/* ---- CUSTOMERS ---- */
+function renderAdminCustomers(c){
+  c.innerHTML=`
+  <div class="admin-page-header"><span>👥</span><h1>Khách hàng</h1><button class="btn btn-green btn-sm" onclick="showAddCustomer()">+ Thêm</button></div>
+  <div class="page-body-scroll">
+    <div class="card">
+      <div class="tbl-wrap"><table>
+        <thead><tr><th>#</th><th>Tên khách</th><th>SĐT</th><th>Hạng</th><th>Điểm</th><th>Tổng mua</th><th>Công nợ</th><th></th></tr></thead>
+        <tbody>${DB.customers.map((cu,i)=>`<tr>
+          <td>${i+1}</td>
+          <td><strong>${cu.name}</strong>${cu.notes?`<div class="text-xs text-muted">${cu.notes}</div>`:''}</td>
+          <td>📞 ${cu.phone}</td>
+          <td><span class="badge ${cu.type==='VIP'?'badge-amber':cu.type==='Sỉ'?'badge-blue':'badge-gray'}">${cu.type}</span></td>
+          <td>⭐ ${cu.points||0}</td>
+          <td class="text-green font-bold">${fmt(cu.totalBuy||0)}</td>
+          <td class="${cu.debt>0?'text-red font-bold':''}">${cu.debt>0?fmt(cu.debt):'—'}</td>
+          <td><div style="display:flex;gap:4px">
+            <button class="btn btn-outline btn-sm" onclick="showEditCustomer('${cu.id}')">✏️</button>
+            ${cu.debt>0?`<button class="btn btn-green btn-sm" onclick="showPayDebt('${cu.id}')">Thu nợ</button>`:''}
+          </div></td>
+        </tr>`).join('')}
+        </tbody>
+      </table></div>
+    </div>
+  </div>`;
+}
+function showAddCustomer(){
+  showModal(`<div class="modal">
+    <div class="modal-header"><span>👤</span><h2>Thêm khách hàng</h2><button class="btn btn-ghost btn-icon" onclick="closeModal()">✕</button></div>
+    <div class="modal-body">
+      <div class="grid-2"><div class="form-group"><label>Tên *</label><input class="form-control" id="nc-name"/></div><div class="form-group"><label>SĐT</label><input class="form-control" id="nc-phone" type="tel"/></div></div>
+      <div class="form-group mt-12"><label>Địa chỉ</label><input class="form-control" id="nc-addr"/></div>
+      <div class="grid-2 mt-12">
+        <div class="form-group"><label>Hạng</label><select class="form-control" id="nc-type"><option>Thường</option><option>VIP</option><option>Sỉ</option></select></div>
+        <div class="form-group"><label>Công nợ ban đầu</label><input class="form-control" type="number" id="nc-debt" placeholder="0"/></div>
+      </div>
+      <div class="form-group mt-12"><label>Ghi chú</label><input class="form-control" id="nc-note"/></div>
+    </div>
+    <div class="modal-footer"><button class="btn btn-outline" onclick="closeModal()">Hủy</button><button class="btn btn-green" onclick="saveNewCustomer()">💾 Lưu</button></div>
+  </div>`);
+}
+function saveNewCustomer(){
+  const name=document.getElementById('nc-name').value.trim();
+  if(!name){toast('Nhập tên!','error');return;}
+  DB.customers.push({id:'c'+uid(),name,phone:document.getElementById('nc-phone').value,address:document.getElementById('nc-addr').value,type:document.getElementById('nc-type').value,debt:+document.getElementById('nc-debt').value||0,totalBuy:0,points:0,notes:document.getElementById('nc-note').value});
+  saveDB();closeModal();toast('Đã thêm khách hàng!');
+  renderAdminCustomers(document.getElementById('admin-content'));
+}
+function showEditCustomer(id){
+  const cu=DB.customers.find(x=>x.id===id);if(!cu)return;
+  showModal(`<div class="modal">
+    <div class="modal-header"><span>✏️</span><h2>Sửa: ${cu.name}</h2><button class="btn btn-ghost btn-icon" onclick="closeModal()">✕</button></div>
+    <div class="modal-body">
+      <div class="grid-2"><div class="form-group"><label>Tên *</label><input class="form-control" id="ec-name" value="${cu.name}"/></div><div class="form-group"><label>SĐT</label><input class="form-control" id="ec-phone" value="${cu.phone}"/></div></div>
+      <div class="form-group mt-12"><label>Địa chỉ</label><input class="form-control" id="ec-addr" value="${cu.address}"/></div>
+      <div class="grid-2 mt-12">
+        <div class="form-group"><label>Hạng</label><select class="form-control" id="ec-type"><option ${cu.type==='Thường'?'selected':''}>Thường</option><option ${cu.type==='VIP'?'selected':''}>VIP</option><option ${cu.type==='Sỉ'?'selected':''}>Sỉ</option></select></div>
+        <div class="form-group"><label>Công nợ (đ)</label><input class="form-control" type="number" id="ec-debt" value="${cu.debt}"/></div>
+      </div>
+      <div class="form-group mt-12"><label>Ghi chú</label><input class="form-control" id="ec-note" value="${cu.notes}"/></div>
+    </div>
+    <div class="modal-footer"><button class="btn btn-outline" onclick="closeModal()">Hủy</button><button class="btn btn-green" onclick="saveEditCustomer('${id}')">💾 Cập nhật</button></div>
+  </div>`);
+}
+function saveEditCustomer(id){
+  const cu=DB.customers.find(x=>x.id===id);if(!cu)return;
+  cu.name=document.getElementById('ec-name').value;cu.phone=document.getElementById('ec-phone').value;
+  cu.address=document.getElementById('ec-addr').value;cu.type=document.getElementById('ec-type').value;
+  cu.debt=+document.getElementById('ec-debt').value||0;cu.notes=document.getElementById('ec-note').value;
+  saveDB();closeModal();toast('Đã cập nhật!');
+  renderAdminCustomers(document.getElementById('admin-content'));
+}
+
+/* ---- DEBT ---- */
+function renderAdminDebt(c){
+  const debtors=DB.customers.filter(cu=>cu.debt>0);
+  const totalDebt=debtors.reduce((s,cu)=>s+cu.debt,0);
+  c.innerHTML=`
+  <div class="admin-page-header"><span>💳</span><h1>Công nợ</h1></div>
+  <div class="page-body-scroll">
+    <div class="stat-grid" style="grid-template-columns:repeat(3,1fr)">
+      <div class="stat-card"><div class="s-label">Khách nợ</div><div class="s-val text-red">${debtors.length}</div></div>
+      <div class="stat-card"><div class="s-label">Tổng nợ</div><div class="s-val text-red" style="font-size:16px">${fmt(totalDebt)}</div></div>
+      <div class="stat-card"><div class="s-label">Không nợ</div><div class="s-val text-green">${DB.customers.length-debtors.length}</div></div>
+    </div>
+    <div class="card mt-16">
+      <div class="tbl-wrap"><table>
+        <thead><tr><th>Khách hàng</th><th>SĐT</th><th>Hạng</th><th>Nợ</th><th></th></tr></thead>
+        <tbody>${debtors.length?debtors.map(cu=>`<tr>
+          <td><strong>${cu.name}</strong></td><td>${cu.phone}</td>
+          <td><span class="badge ${cu.type==='VIP'?'badge-amber':cu.type==='Sỉ'?'badge-blue':'badge-gray'}">${cu.type}</span></td>
+          <td class="text-red font-bold" style="font-size:15px">${fmt(cu.debt)}</td>
+          <td><button class="btn btn-green btn-sm" onclick="showPayDebt('${cu.id}')">💵 Thu nợ</button></td>
+        </tr>`).join(''):'<tr><td colspan="5" class="text-center text-green" style="padding:32px">✅ Không có công nợ!</td></tr>'}
+        </tbody>
+      </table></div>
+    </div>
+  </div>`;
+}
+function showPayDebt(id){
+  const cu=DB.customers.find(x=>x.id===id);if(!cu)return;
+  showModal(`<div class="modal modal-sm">
+    <div class="modal-header"><span>💵</span><h2>Thu nợ – ${cu.name}</h2><button class="btn btn-ghost btn-icon" onclick="closeModal()">✕</button></div>
+    <div class="modal-body">
+      <div class="alert alert-warn mb-16">💳 Đang nợ: <strong>${fmt(cu.debt)}</strong></div>
+      <div class="form-group"><label>Số tiền thu (đ)</label><input class="form-control" id="pay-amt" type="number" value="${cu.debt}"/></div>
+    </div>
+    <div class="modal-footer"><button class="btn btn-outline" onclick="closeModal()">Hủy</button><button class="btn btn-green" onclick="processPayDebt('${id}')">✅ Xác nhận thu</button></div>
+  </div>`);
+}
+function processPayDebt(id){
+  const cu=DB.customers.find(x=>x.id===id);if(!cu)return;
+  const amt=+document.getElementById('pay-amt').value;
+  if(!amt||amt<=0){toast('Nhập số tiền!','error');return;}
+  if(amt>cu.debt){toast('Vượt quá số nợ!','error');return;}
+  cu.debt=Math.max(0,cu.debt-amt);saveDB();closeModal();toast(`Thu nợ thành công! ${fmt(amt)}`);
+  renderAdminDebt(document.getElementById('admin-content'));
+}
+
+/* ---- INVOICES ---- */
+function renderAdminInvoices(c){
+  const pending=DB.custOrders.filter(o=>o.status==='pending');
+  c.innerHTML=`
+  <div class="admin-page-header"><span>📋</span><h1>Hóa đơn & Đơn hàng</h1></div>
+  <div class="page-body-scroll">
+    ${pending.length?`<div class="card mb-16">
+      <div class="card-header" style="color:var(--amber)">🛍️ Đơn online chờ xử lý (${pending.length})</div>
+      <div class="tbl-wrap"><table>
+        <thead><tr><th>Mã đơn</th><th>Ngày</th><th>Khách</th><th>Tổng tiền</th><th>Thanh toán</th><th>Ghi chú</th><th></th></tr></thead>
+        <tbody>${pending.map(o=>`<tr>
+          <td><code style="color:var(--amber)">${o.id}</code></td><td>${fmtD(o.date)}</td><td>${o.customerName}</td>
+          <td class="font-bold text-green">${fmt(o.total)}</td>
+          <td>${o.payMode==='qr'?'💳 Chuyển khoản':'💵 Tiền mặt'}</td>
+          <td style="max-width:120px;overflow:hidden;text-overflow:ellipsis">${o.note||'—'}</td>
+          <td><div style="display:flex;gap:4px">
+            <button class="btn btn-green btn-sm" onclick="confirmOrder('${o.id}')">✅ Xác nhận</button>
+            <button class="btn btn-red btn-sm" onclick="cancelOrder('${o.id}')">✕</button>
+          </div></td>
+        </tr>`).join('')}
+        </tbody>
+      </table></div>
+    </div>`:''}
+    <div class="card">
+      <div class="card-header">📋 Hóa đơn bán hàng</div>
+      <div class="tbl-wrap"><table>
+        <thead><tr><th>Mã HĐ</th><th>Ngày</th><th>Khách</th><th>Tổng</th><th>Đã thu</th><th>Còn nợ</th><th>TT</th><th></th></tr></thead>
+        <tbody>${DB.invoices.map(inv=>`<tr>
+          <td><code style="color:var(--blue);font-weight:800">${inv.id}</code></td>
+          <td>${fmtD(inv.date)}</td><td>${inv.customerName}</td>
+          <td class="font-bold">${fmt(inv.total)}</td>
+          <td class="text-green">${fmt(inv.paid)}</td>
+          <td class="${inv.debt>0?'text-red font-bold':''}">${inv.debt>0?fmt(inv.debt):'—'}</td>
+          <td><span class="badge ${inv.status==='paid'?'badge-green':'badge-amber'}">${inv.status==='paid'?'Đã TT':'Còn nợ'}</span></td>
+          <td><button class="btn btn-outline btn-sm" onclick="showInvDetail('${inv.id}')">👁</button></td>
+        </tr>`).join('')}
+        </tbody>
+      </table></div>
+    </div>
+  </div>`;
+}
+function confirmOrder(id){
+  const o=DB.custOrders.find(x=>x.id===id);if(!o)return;
+  o.status='done';
+  // Create invoice from order
+  const customer=DB.customers.find(c=>c.id===o.customerId);
+  const inv={id:'HD'+Date.now().toString().slice(-6),date:today(),customerId:o.customerId,customerName:o.customerName,
+    items:o.items.map(i=>({productId:i.productId,name:i.name,qty:i.qty,unit:i.unit,price:i.price})),
+    total:o.total,paid:o.payMode==='cash'?0:o.total,debt:o.payMode==='cash'?o.total:0,
+    status:o.payMode==='cash'?'partial':'paid'};
+  DB.invoices.unshift(inv);
+  if(customer&&o.payMode==='cash')customer.debt=(customer.debt||0)+o.total;
+  saveDB();toast('Đã xác nhận đơn hàng!');
+  renderAdminInvoices(document.getElementById('admin-content'));
+}
+function cancelOrder(id){
+  if(!confirm('Hủy đơn hàng này?'))return;
+  const o=DB.custOrders.find(x=>x.id===id);if(o)o.status='cancelled';
+  saveDB();toast('Đã hủy đơn','warning');
+  renderAdminInvoices(document.getElementById('admin-content'));
+}
+function showInvDetail(id){
+  const inv=DB.invoices.find(x=>x.id===id);if(!inv)return;
+  const s=DB.settings;
+  showModal(`<div class="modal modal-lg">
+    <div class="modal-header"><span>🧾</span><h2>Hóa đơn ${inv.id}</h2>
+      <button class="btn btn-green btn-sm" onclick="printInv('${id}')">🖨️ In</button>
+      <button class="btn btn-ghost btn-icon" onclick="closeModal()">✕</button></div>
+    <div class="modal-body" id="inv-print-${id}">
+      <div style="text-align:center;padding-bottom:14px;border-bottom:2px dashed var(--border);margin-bottom:14px">
+        <div style="font-size:20px;font-weight:900;color:var(--g800)">🌱 ${s.storeName}</div>
+        <div class="text-xs text-muted">${s.address} | ${s.phone}</div>
+        <div style="font-size:15px;font-weight:800;margin-top:8px">HÓA ĐƠN BÁN HÀNG</div>
+        <div class="text-sm text-muted">${inv.id} | ${fmtD(inv.date)}</div>
+      </div>
+      <div class="mb-12 text-sm"><strong>Khách:</strong> ${inv.customerName}</div>
+      <table style="width:100%;border-collapse:collapse;font-size:13px">
+        <thead><tr style="background:var(--g50)"><th style="padding:7px;text-align:left;border:1px solid var(--border)">Sản phẩm</th><th style="padding:7px;text-align:center;border:1px solid var(--border)">ĐVT</th><th style="padding:7px;text-align:center;border:1px solid var(--border)">SL</th><th style="padding:7px;text-align:right;border:1px solid var(--border)">Đơn giá</th><th style="padding:7px;text-align:right;border:1px solid var(--border)">Thành tiền</th></tr></thead>
+        <tbody>${inv.items.map(i=>`<tr><td style="padding:6px 7px;border:1px solid var(--border)">${i.name}</td><td style="padding:6px 7px;text-align:center;border:1px solid var(--border)">${i.unit||'Cái'}</td><td style="padding:6px 7px;text-align:center;border:1px solid var(--border)">${i.qty}</td><td style="padding:6px 7px;text-align:right;border:1px solid var(--border)">${fmt(i.price)}</td><td style="padding:6px 7px;text-align:right;border:1px solid var(--border);font-weight:700">${fmt(i.price*i.qty)}</td></tr>`).join('')}</tbody>
+      </table>
+      <div style="text-align:right;margin-top:12px">
+        <div>Tổng tiền: <strong>${fmt(inv.total)}</strong></div>
+        <div style="color:var(--g800)">Đã thanh toán: <strong>${fmt(inv.paid)}</strong></div>
+        ${inv.debt>0?`<div style="color:var(--red)">Còn nợ: <strong>${fmt(inv.debt)}</strong></div>`:''}
+      </div>
+      <div style="text-align:center;margin-top:16px;font-size:12px;color:var(--muted)">Cảm ơn quý khách! 🌱</div>
+    </div>
+    <div class="modal-footer"><button class="btn btn-outline" onclick="closeModal()">Đóng</button></div>
+  </div>`);
+}
+function printInv(id){
+  const a=document.getElementById(`inv-print-${id}`);if(!a)return;
+  const w=window.open('','_blank');
+  w.document.write(`<html><head><title>Hóa đơn</title><style>body{font-family:Arial,sans-serif;padding:20px;font-size:13px}table{width:100%;border-collapse:collapse}th,td{border:1px solid #ccc;padding:6px}@media print{button{display:none}}</style></head><body>${a.innerHTML}<br><button onclick="window.print()">In hóa đơn</button></body></html>`);
+  w.document.close();
+}
+
+/* ---- SETTINGS ---- */
+function renderAdminSettings(c){
+  const s=DB.settings;
+  c.innerHTML=`
+  <div class="admin-page-header"><span>⚙️</span><h1>Cài đặt</h1></div>
+  <div class="page-body-scroll">
+    <div class="card mb-16" style="max-width:600px">
+      <div class="card-header">🏪 Thông tin cửa hàng</div>
+      <div class="card-body">
+        <div class="form-group mb-12"><label>Tên cửa hàng</label><input class="form-control" id="s-name" value="${s.storeName}"/></div>
+        <div class="grid-2 mb-12">
+          <div class="form-group"><label>SĐT cửa hàng</label><input class="form-control" id="s-phone" value="${s.phone}"/></div>
+          <div class="form-group"><label>SĐT Zalo hỗ trợ</label><input class="form-control" id="s-zalo" value="${s.zaloPhone}"/></div>
+        </div>
+        <div class="form-group mb-12"><label>Địa chỉ</label><input class="form-control" id="s-addr" value="${s.address}"/></div>
+      </div>
+    </div>
+    <div class="card mb-16" style="max-width:600px">
+      <div class="card-header">💳 Thông tin thanh toán QR (VietQR)</div>
+      <div class="card-body">
+        <div class="grid-2 mb-12">
+          <div class="form-group"><label>Mã ngân hàng (VCB, TCB, MB...)</label><input class="form-control" id="s-bank" value="${s.bank}"/></div>
+          <div class="form-group"><label>Số tài khoản</label><input class="form-control" id="s-acc" value="${s.bankAccount}"/></div>
+        </div>
+        <div class="form-group mb-12"><label>Tên chủ tài khoản</label><input class="form-control" id="s-accname" value="${s.bankName}"/></div>
+        <div id="qr-preview-wrap" style="text-align:center;margin-top:8px">
+          <button class="btn btn-outline btn-sm" onclick="previewQR()">👁 Xem thử QR</button>
+          <div id="qr-preview" style="margin-top:10px"></div>
+        </div>
+      </div>
+    </div>
+    <div class="card mb-16" style="max-width:600px">
+      <div class="card-header">🔐 Tài khoản admin</div>
+      <div class="card-body">
+        <div class="grid-2">
+          <div class="form-group"><label>Tên đăng nhập</label><input class="form-control" id="s-user" value="${s.adminUser}"/></div>
+          <div class="form-group"><label>Mật khẩu mới</label><input class="form-control" type="password" id="s-pass" placeholder="Để trống = không đổi"/></div>
+        </div>
+      </div>
+    </div>
+    <div style="display:flex;gap:8px">
+      <button class="btn btn-green btn-lg" onclick="saveSettings()">💾 Lưu tất cả</button>
+      <button class="btn btn-red" onclick="if(confirm('Reset toàn bộ dữ liệu?')){localStorage.removeItem('${KEY}');DB=loadDB();saveDB();toast('Đã reset!','warning');renderAdminSettings(document.getElementById('admin-content'))}">🗑 Reset dữ liệu</button>
+    </div>
+  </div>`;
+}
+function previewQR(){
+  const bank=document.getElementById('s-bank').value;
+  const acc=document.getElementById('s-acc').value;
+  const name=document.getElementById('s-accname').value;
+  const url=`https://img.vietqr.io/image/${bank}-${acc}-compact2.png?amount=100000&addInfo=Test&accountName=${encodeURIComponent(name)}`;
+  const el=document.getElementById('qr-preview');
+  if(el)el.innerHTML=`<img src="${url}" style="width:180px;height:180px;border-radius:8px;border:1px solid var(--border)" onerror="this.outerHTML='<p class=text-muted>Không tải được QR – kiểm tra thông tin ngân hàng</p>'"/><div class="text-xs text-muted mt-8">QR mẫu 100.000đ</div>`;
+}
+function saveSettings(){
+  const s=DB.settings;
+  s.storeName=document.getElementById('s-name').value;
+  s.phone=document.getElementById('s-phone').value;
+  s.zaloPhone=document.getElementById('s-zalo').value;
+  s.address=document.getElementById('s-addr').value;
+  s.bank=document.getElementById('s-bank').value;
+  s.bankAccount=document.getElementById('s-acc').value;
+  s.bankName=document.getElementById('s-accname').value;
+  s.adminUser=document.getElementById('s-user').value;
+  const newPass=document.getElementById('s-pass').value;
+  if(newPass)s.adminPass=newPass;
+  // Update zalo link
+  const zBtn=document.getElementById('zalo-btn');
+  if(zBtn)zBtn.href=`https://zalo.me/${s.zaloPhone}`;
+  saveDB();toast('Đã lưu cài đặt!');
+}
+
+// ============================================================
+// INIT
+// ============================================================
+// Show login screen by default (already done in HTML)
+// Update Zalo label hover
+document.getElementById('zalo-label').style.display='none';
+document.getElementById('zalo-btn').addEventListener('mouseenter',()=>document.getElementById('zalo-label').style.display='block');
+document.getElementById('zalo-btn').addEventListener('mouseleave',()=>document.getElementById('zalo-label').style.display='none');
+</script>
+
+<!-- Supabase cloud sync: tạm tắt. Khi cần bật lại, thêm 2 dòng script supabase vào đây -->
+
+</body>
+</html>
