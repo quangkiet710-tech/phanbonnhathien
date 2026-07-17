@@ -463,6 +463,7 @@ tr:hover td{background:var(--g50);}
       <div class="sidebar-section">Kho & Hàng hóa</div>
       <div class="sidebar-item" onclick="showAdminPage('products')"><span class="s-icon">📦</span>Sản phẩm</div>
       <div class="sidebar-item" onclick="showAdminPage('inventory')"><span class="s-icon">🏭</span>Nhập kho</div>
+      <div class="sidebar-item" onclick="showAdminPage('batchimport')"><span class="s-icon">📥</span>Nhập hàng loạt</div>
       <div class="sidebar-section">Khách hàng</div>
       <div class="sidebar-item" onclick="showAdminPage('customers')"><span class="s-icon">👥</span>Khách hàng</div>
       <div class="sidebar-item" onclick="showAdminPage('debt')"><span class="s-icon">💳</span>Công nợ</div>
@@ -1110,7 +1111,7 @@ function showAdminPage(page){
   // close sidebar on mobile
   if(window.innerWidth<768)document.getElementById('admin-sidebar').classList.remove('open');
   const c=document.getElementById('admin-content');
-  ({pos:renderAdminPOS,dashboard:renderAdminDash,products:renderAdminProducts,inventory:renderAdminInventory,customers:renderAdminCustomers,debt:renderAdminDebt,invoices:renderAdminInvoices,settings:renderAdminSettings}[page]||renderAdminDash)(c);
+  ({pos:renderAdminPOS,dashboard:renderAdminDash,products:renderAdminProducts,inventory:renderAdminInventory,batchimport:renderBatchImport,customers:renderAdminCustomers,debt:renderAdminDebt,invoices:renderAdminInvoices,settings:renderAdminSettings}[page]||renderAdminDash)(c);
 }
 function toggleSidebar(){document.getElementById('admin-sidebar').classList.toggle('open');}
 
@@ -1666,6 +1667,133 @@ function saveImport(){
   valid.forEach(item=>{const p=DB.products.find(x=>x.id===item.productId);if(p){p.stock+=item.qty;p.cost=item.cost;}});
   saveDB();closeModal();toast(`Nhập kho thành công! ${fmt(total)}`);
   renderAdminInventory(document.getElementById('admin-content'));
+}
+
+/* ---- BATCH IMPORT (Nhập hàng loạt qua JSON) ---- */
+let _batchParsed=null;
+function batchSample(){
+  return JSON.stringify({
+    type:'purchase',
+    supplier:'Tên nhà cung cấp',
+    date:today(),
+    note:'số hóa đơn gốc',
+    items:[
+      {name:'Tên sản phẩm',unit:'Bao',qty:50,cost:930000,price:0}
+    ]
+  },null,2);
+}
+function renderBatchImport(c){
+  _batchParsed=null;
+  c.innerHTML=`
+  <div class="admin-page-header"><span>📥</span><h1>Nhập hàng loạt</h1></div>
+  <div class="page-body-scroll">
+    <div class="card mb-16">
+      <div class="card-header">📋 Dán dữ liệu JSON phiếu nhập hàng</div>
+      <div class="card-body">
+        <div class="alert alert-warn mb-12" style="font-size:12px">
+          Dán JSON theo mẫu bên dưới rồi bấm <strong>Kiểm tra</strong> để xem trước, sau đó bấm <strong>Nhập vào app</strong>.
+          So khớp tên sản phẩm không phân biệt hoa/thường và bỏ dấu tiếng Việt.
+        </div>
+        <textarea class="form-control" id="batch-json" spellcheck="false"
+          style="width:100%;min-height:220px;font-family:monospace;font-size:12.5px;white-space:pre;overflow:auto"
+          placeholder='${batchSample().replace(/'/g,"&#39;")}'></textarea>
+        <div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap">
+          <button class="btn btn-outline btn-sm" onclick="document.getElementById('batch-json').value=batchSample();document.getElementById('batch-preview').innerHTML=''">📝 Chèn mẫu</button>
+          <button class="btn btn-outline" onclick="checkBatchImport()">🔍 Kiểm tra</button>
+          <button class="btn btn-green" onclick="runBatchImport()">📥 Nhập vào app</button>
+        </div>
+      </div>
+    </div>
+    <div id="batch-preview"></div>
+  </div>`;
+}
+function parseBatchJSON(){
+  const raw=(document.getElementById('batch-json')?.value||'').trim();
+  if(!raw)throw new Error('Chưa dán dữ liệu JSON.');
+  let data;
+  try{data=JSON.parse(raw);}catch(e){throw new Error('JSON sai định dạng: '+e.message);}
+  if(typeof data!=='object'||data===null||Array.isArray(data))throw new Error('JSON phải là một đối tượng phiếu nhập.');
+  if(data.type&&data.type!=='purchase')throw new Error('Trường "type" phải là "purchase".');
+  if(!Array.isArray(data.items)||!data.items.length)throw new Error('Thiếu danh sách "items" (mảng sản phẩm).');
+  data.items.forEach((it,idx)=>{
+    if(typeof it!=='object'||it===null)throw new Error(`Món thứ ${idx+1} không hợp lệ.`);
+    if(!it.name||!String(it.name).trim())throw new Error(`Món thứ ${idx+1} thiếu "name".`);
+    if(isNaN(+it.qty)||+it.qty<=0)throw new Error(`Món "${it.name}" có "qty" không hợp lệ.`);
+    if(isNaN(+it.cost)||+it.cost<0)throw new Error(`Món "${it.name}" có "cost" không hợp lệ.`);
+  });
+  return data;
+}
+function checkBatchImport(){
+  const el=document.getElementById('batch-preview');
+  let data;
+  try{data=parseBatchJSON();}catch(e){_batchParsed=null;el.innerHTML=`<div class="alert alert-warn"><strong>❌ Lỗi:</strong> ${e.message}</div>`;return;}
+  _batchParsed=data;
+  let totalNew=0,totalDup=0,grand=0;
+  const rows=data.items.map(it=>{
+    const qty=+it.qty,cost=+it.cost,line=qty*cost;grand+=line;
+    const existing=DB.products.find(p=>stripDiacritics(p.name)===stripDiacritics(String(it.name).trim()));
+    if(existing)totalDup++;else totalNew++;
+    return `<tr>
+      <td><strong>${it.name}</strong>${it.unit?`<div class="text-xs text-muted">${it.unit}</div>`:''}</td>
+      <td>${qty}</td>
+      <td>${fmt(cost)}</td>
+      <td class="font-bold">${fmt(line)}</td>
+      <td>${existing?`<span class="badge badge-amber">🔁 Trùng – cộng kho</span>`:`<span class="badge badge-green">🆕 Hàng mới</span>`}</td>
+    </tr>`;
+  }).join('');
+  el.innerHTML=`
+  <div class="card">
+    <div class="card-header">👁 Xem trước – NCC: ${data.supplier||'(chưa ghi)'} ${data.date?'| '+fmtD(data.date):''} ${data.note?'| '+data.note:''}</div>
+    <div class="tbl-wrap"><table>
+      <thead><tr><th>Tên hàng</th><th>SL</th><th>Giá vốn</th><th>Thành tiền</th><th>Tình trạng</th></tr></thead>
+      <tbody>${rows}</tbody>
+      <tfoot><tr><td colspan="3" class="text-right font-bold">Tổng cộng:</td><td class="font-bold text-green">${fmt(grand)}</td><td></td></tr></tfoot>
+    </table></div>
+    <div class="card-body" style="display:flex;gap:16px;flex-wrap:wrap">
+      <span class="badge badge-green">🆕 ${totalNew} món mới</span>
+      <span class="badge badge-amber">🔁 ${totalDup} món cộng kho</span>
+    </div>
+  </div>`;
+}
+function runBatchImport(){
+  let data;
+  try{data=parseBatchJSON();}catch(e){toast(e.message,'error');const el=document.getElementById('batch-preview');if(el)el.innerHTML=`<div class="alert alert-warn"><strong>❌ Lỗi:</strong> ${e.message}</div>`;return;}
+  let cntNew=0,cntDup=0,grand=0;
+  const impItems=[];
+  data.items.forEach(it=>{
+    const name=String(it.name).trim();
+    const qty=+it.qty,cost=+it.cost,price=+it.price||0,unit=String(it.unit||'').trim()||'Cái';
+    grand+=qty*cost;
+    const existing=DB.products.find(p=>stripDiacritics(p.name)===stripDiacritics(name));
+    if(existing){
+      existing.stock+=qty;
+      existing.cost=cost;
+      if(price>0){existing.price=price;if(existing.units&&existing.units[0])existing.units[0].price=price;}
+      cntDup++;
+      impItems.push({productId:existing.id,name:existing.name,qty,cost});
+    }else{
+      const np={
+        id:'p'+uid(),name,sku:'SP'+Date.now().toString().slice(-6)+DB.products.length,
+        cat:'Khác',icon:'📦',cost,supplier:data.supplier||'',
+        stock:qty,minStock:10,price,
+        units:[{name:unit,ratio:1,price}]
+      };
+      DB.products.push(np);
+      cntNew++;
+      impItems.push({productId:np.id,name:np.name,qty,cost});
+    }
+  });
+  // Ghi lại 1 phiếu nhập kho để lưu lịch sử
+  DB.stockImports.unshift({
+    id:'NK'+Date.now().toString().slice(-6),
+    date:data.date||today(),
+    supplier:data.supplier||'',
+    note:data.note||'',
+    items:impItems,total:grand
+  });
+  saveDB();
+  toast(`Đã nhập: ${cntNew} món mới, ${cntDup} món cộng kho`);
+  renderBatchImport(document.getElementById('admin-content'));
 }
 
 /* ---- CUSTOMERS ---- */
