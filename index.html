@@ -1731,7 +1731,10 @@ function renderAdminInvoices(c){
           <td class="text-green">${fmt(inv.paid)}</td>
           <td class="${inv.debt>0?'text-red font-bold':''}">${inv.debt>0?fmt(inv.debt):'—'}</td>
           <td><span class="badge ${inv.status==='paid'?'badge-green':'badge-amber'}">${inv.status==='paid'?'Đã TT':'Còn nợ'}</span></td>
-          <td><button class="btn btn-outline btn-sm" onclick="showInvDetail('${inv.id}')">👁</button></td>
+          <td><div style="display:flex;gap:4px">
+            <button class="btn btn-outline btn-sm" onclick="showInvDetail('${inv.id}')">👁</button>
+            <button class="btn btn-red btn-sm" onclick="deleteInvoice('${inv.id}')">🗑</button>
+          </div></td>
         </tr>`).join('')}
         </tbody>
       </table></div>
@@ -1756,6 +1759,28 @@ function cancelOrder(id){
   if(!confirm('Hủy đơn hàng này?'))return;
   const o=DB.custOrders.find(x=>x.id===id);if(o)o.status='cancelled';
   saveDB();toast('Đã hủy đơn','warning');
+  renderAdminInvoices(document.getElementById('admin-content'));
+}
+function deleteInvoice(id){
+  const inv=DB.invoices.find(x=>x.id===id);if(!inv)return;
+  if(inv.debt>0){
+    if(!confirm(`Hóa đơn này còn nợ ${fmt(inv.debt)}, xóa sẽ mất thông tin nợ này. Vẫn xóa?`))return;
+  }else{
+    if(!confirm('Xóa hóa đơn này?'))return;
+  }
+  inv.items.forEach(item=>{
+    const p=DB.products.find(x=>x.id===item.productId);
+    if(p){
+      const u=p.units.find(u=>u.name===item.unit);
+      p.stock+=Math.ceil(item.qty/(u?.ratio||1));
+    }
+  });
+  if(inv.debt>0&&inv.customerId){
+    const cu=DB.customers.find(x=>x.id===inv.customerId);
+    if(cu)cu.debt=Math.max(0,(cu.debt||0)-inv.debt);
+  }
+  DB.invoices=DB.invoices.filter(x=>x.id!==id);
+  saveDB();toast('Đã xóa hóa đơn','warning');
   renderAdminInvoices(document.getElementById('admin-content'));
 }
 function showInvDetail(id){
