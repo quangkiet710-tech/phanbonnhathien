@@ -324,6 +324,12 @@ tr:hover td{background:var(--g50);}
 .search-wrap input:focus{border-color:var(--g700);}
 .search-ico{position:absolute;left:10px;font-size:15px;pointer-events:none;}
 
+/* AUTOCOMPLETE DROPDOWN */
+.ac-dropdown{display:none;position:absolute;top:100%;left:0;right:0;background:#fff;border:1.5px solid var(--border);border-radius:var(--radius-sm);margin-top:2px;max-height:220px;overflow-y:auto;z-index:500;box-shadow:0 4px 14px rgba(0,0,0,.12);}
+.ac-item{padding:9px 12px;font-size:13.5px;cursor:pointer;}
+.ac-item:hover,.ac-item:active{background:var(--g50);}
+.ac-empty{padding:9px 12px;font-size:12.5px;color:var(--muted);}
+
 /* ALERT */
 .alert{padding:12px 14px;border-radius:8px;font-size:13px;display:flex;gap:8px;align-items:flex-start;}
 .alert-warn{background:var(--amber-lt);border:1px solid #ffe082;color:#bf360c;}
@@ -551,6 +557,27 @@ function fmtD(d){if(!d)return'';return new Date(d).toLocaleDateString('vi-VN');}
 function uid(){return Date.now().toString(36)+Math.random().toString(36).slice(2,5);}
 function today(){return new Date().toISOString().slice(0,10);}
 
+// Bỏ dấu tiếng Việt + về chữ thường, dùng để tìm kiếm không phân biệt hoa/thường và có dấu/không dấu
+function stripDiacritics(s){
+  return (s||'').normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/đ/g,'d').replace(/Đ/g,'D').toLowerCase();
+}
+function matchesSearch(text,query){
+  if(!query)return true;
+  return stripDiacritics(text).includes(stripDiacritics(query));
+}
+// Lọc ô nhập chỉ cho số (allowDecimal=true thì cho thêm 1 dấu chấm thập phân)
+function filterNumInput(el,allowDecimal){
+  let v=el.value;
+  if(allowDecimal){
+    v=v.replace(/[^0-9.]/g,'');
+    const parts=v.split('.');
+    if(parts.length>2)v=parts[0]+'.'+parts.slice(1).join('');
+  }else{
+    v=v.replace(/[^0-9]/g,'');
+  }
+  if(v!==el.value)el.value=v;
+}
+
 function toast(msg,type='success'){
   const r=document.getElementById('toast-root');
   const t=document.createElement('div');
@@ -774,12 +801,16 @@ function renderCustShop(c){
   const cats=['Tất cả',...new Set(DB.products.map(p=>p.cat))];
   const activeCat=window._shopCat||'Tất cả';
   const search=window._shopSearch||'';
-  const prods=DB.products.filter(p=>(activeCat==='Tất cả'||p.cat===activeCat)&&p.name.toLowerCase().includes(search.toLowerCase()));
+  const prods=DB.products.filter(p=>(activeCat==='Tất cả'||p.cat===activeCat)&&matchesSearch(p.name,search));
   c.innerHTML=`
   <div style="padding:12px 12px 0;display:flex;gap:8px;align-items:center">
     <div class="search-wrap flex-1">
       <span class="search-ico">🔍</span>
-      <input class="form-control" style="width:100%" placeholder="Tìm sản phẩm..." value="${search}" oninput="window._shopSearch=this.value;renderCustShop(document.getElementById('cust-content'))"/>
+      <input id="shop-search-inp" class="form-control" style="width:100%" placeholder="Tìm sản phẩm..." value="${search}" autocomplete="off"
+        oninput="window._shopSearch=this.value;renderCustShop(document.getElementById('cust-content'))"
+        onfocus="renderShopSearchAC()"
+        onblur="setTimeout(()=>{const el=document.getElementById('shop-search-ac');if(el)el.style.display='none';},150)"/>
+      <div id="shop-search-ac" class="ac-dropdown"></div>
     </div>
   </div>
   <div style="padding:8px 12px;display:flex;gap:6px;overflow-x:auto;flex-wrap:nowrap">
@@ -787,6 +818,23 @@ function renderCustShop(c){
   </div>
   <div class="prod-grid">${prods.map(p=>prodCardHTML(p)).join('')||'<p style="padding:32px;text-align:center;color:var(--muted);grid-column:1/-1">Không tìm thấy sản phẩm</p>'}</div>
   <div style="height:80px"></div>`;
+  renderShopSearchAC();
+}
+function renderShopSearchAC(){
+  const el=document.getElementById('shop-search-ac');if(!el)return;
+  const q=(window._shopSearch||'').trim();
+  if(!q){el.style.display='none';el.innerHTML='';return;}
+  const matches=DB.products.filter(p=>matchesSearch(p.name,q)).slice(0,6);
+  if(!matches.length){el.style.display='none';el.innerHTML='';return;}
+  el.innerHTML=matches.map(p=>`<div class="ac-item" onmousedown="pickShopSearch('${p.id}')">${p.icon} ${p.name}</div>`).join('');
+  el.style.display='block';
+}
+function pickShopSearch(id){
+  const p=DB.products.find(x=>x.id===id);if(!p)return;
+  window._shopSearch=p.name;
+  const el=document.getElementById('shop-search-ac');if(el){el.style.display='none';el.innerHTML='';}
+  renderCustShop(document.getElementById('cust-content'));
+  showProdDetail(id);
 }
 
 // PRODUCT DETAIL MODAL
@@ -812,7 +860,7 @@ function showProdDetail(id){
       </div>
       <div class="form-group mb-16">
         <label>Số lượng</label>
-        <input class="form-control" type="number" id="qty-inp-${id}" value="1" min="1" max="${p.stock}" inputmode="numeric"/>
+        <input class="form-control" type="text" id="qty-inp-${id}" value="1" min="1" max="${p.stock}" inputmode="decimal" oninput="filterNumInput(this,true)"/>
       </div>
       <div style="background:var(--g50);border-radius:var(--radius-sm);padding:12px;margin-bottom:16px">
         <div class="sum-row"><span class="text-muted">Đơn giá:</span><strong id="unit-price-${id}" class="text-green">${fmt(p.units[0].price)}</strong></div>
@@ -844,7 +892,7 @@ function addToCartFromDetail(id){
   const p=DB.products.find(x=>x.id===id);if(!p)return;
   const unitIdx=window[`_selUnit_${id}`]||0;
   const unit=p.units[unitIdx]||p.units[0];
-  const qty=parseInt(document.getElementById(`qty-inp-${id}`)?.value)||1;
+  const qty=parseFloat(document.getElementById(`qty-inp-${id}`)?.value)||1;
   addToCart(p,unit,qty);
   closeModal();
   showCustPage('cart');
@@ -1074,7 +1122,11 @@ function renderAdminPOS(c){
   <div class="admin-page-header">
     <span>🛒</span><h1>Bán hàng</h1>
     <div style="display:flex;gap:8px;flex-wrap:wrap">
-      <div class="search-wrap"><span class="search-ico">🔍</span><input placeholder="Tìm SP..." style="width:160px" value="${posSearchStr}" oninput="posSearchStr=this.value;renderPOSProducts()"/></div>
+      <div class="search-wrap"><span class="search-ico">🔍</span><input id="pos-search-inp" placeholder="Tìm SP..." style="width:160px" value="${posSearchStr}" autocomplete="off"
+        oninput="posSearchStr=this.value;renderPOSProducts();renderPOSSearchAC()"
+        onfocus="renderPOSSearchAC()"
+        onblur="setTimeout(()=>{const el=document.getElementById('pos-search-ac');if(el)el.style.display='none';},150)"/>
+        <div id="pos-search-ac" class="ac-dropdown"></div></div>
       <select class="form-control" style="width:150px" onchange="posCatFilter=this.value;renderPOSProducts()">
         <option value="all">Tất cả</option>
         ${[...new Set(DB.products.map(p=>p.cat))].map(c=>`<option value="${c}" ${posCatFilter===c?'selected':''}>${c}</option>`).join('')}
@@ -1099,8 +1151,25 @@ function renderAdminPOS(c){
   renderPOSCart();
 }
 
+function renderPOSSearchAC(){
+  const el=document.getElementById('pos-search-ac');if(!el)return;
+  const q=posSearchStr.trim();
+  if(!q){el.style.display='none';el.innerHTML='';return;}
+  const matches=DB.products.filter(p=>matchesSearch(p.name,q)).slice(0,6);
+  if(!matches.length){el.style.display='none';el.innerHTML='';return;}
+  el.innerHTML=matches.map(p=>`<div class="ac-item" onmousedown="pickPOSSearch('${p.id}')">${p.icon} ${p.name}</div>`).join('');
+  el.style.display='block';
+}
+function pickPOSSearch(id){
+  const p=DB.products.find(x=>x.id===id);if(!p)return;
+  posSearchStr=p.name;
+  const inp=document.getElementById('pos-search-inp');if(inp)inp.value=p.name;
+  const el=document.getElementById('pos-search-ac');if(el){el.style.display='none';el.innerHTML='';}
+  renderPOSProducts();
+  showPOSProdSelect(id);
+}
 function renderPOSProducts(){
-  const prods=DB.products.filter(p=>(posCatFilter==='all'||p.cat===posCatFilter)&&p.name.toLowerCase().includes(posSearchStr.toLowerCase()));
+  const prods=DB.products.filter(p=>(posCatFilter==='all'||p.cat===posCatFilter)&&matchesSearch(p.name,posSearchStr));
   const el=document.getElementById('pos-prods');if(!el)return;
   el.innerHTML=`<div class="pos-prod-grid">${prods.map(p=>`
     <div class="pos-prod-card" onclick="showPOSProdSelect('${p.id}')">
@@ -1125,7 +1194,7 @@ function showPOSProdSelect(id){
       </div>
       <div class="form-group">
         <label>Số lượng</label>
-        <input class="form-control" type="number" id="pos-qty-inp" value="1" min="1" max="${p.stock}" inputmode="numeric"/>
+        <input class="form-control" type="text" id="pos-qty-inp" value="1" min="1" max="${p.stock}" inputmode="decimal" oninput="filterNumInput(this,true)"/>
       </div>
     </div>
     <div class="modal-footer">
@@ -1146,7 +1215,7 @@ function posAddFromModal(id){
   const p=DB.products.find(x=>x.id===id);if(!p)return;
   const unitIdx=window.posSelUnit||0;
   const unit=p.units[unitIdx]||p.units[0];
-  const qty=parseInt(document.getElementById('pos-qty-inp')?.value)||1;
+  const qty=parseFloat(document.getElementById('pos-qty-inp')?.value)||1;
   if(p.stock<qty){toast('Không đủ tồn kho!','error');return;}
   const key=`${p.id}_${unit.name}`;
   const ex=posCart.find(i=>i.key===key);
@@ -1190,7 +1259,7 @@ function renderPOSCart(){
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px">
       <div class="form-group" style="margin:0">
         <label style="font-size:10px">KHÁCH ĐƯA</label>
-        <input id="pos-cash" type="number" class="form-control" value="${sub}" oninput="updatePOSChange()"/>
+        <input id="pos-cash" type="text" inputmode="numeric" class="form-control" value="${sub}" oninput="filterNumInput(this,false);updatePOSChange()"/>
       </div>
       <div class="form-group" style="margin:0">
         <label style="font-size:10px">TIỀN THỐI</label>
@@ -1338,8 +1407,8 @@ function renderAdminProducts(c){
   renderAdminProductsTable();
 }
 function renderAdminProductsTable(){
-  const search=(document.getElementById('prod-search')?.value||'').toLowerCase();
-  const prods=DB.products.filter(p=>p.name.toLowerCase().includes(search)||p.sku.toLowerCase().includes(search));
+  const search=(document.getElementById('prod-search')?.value||'');
+  const prods=DB.products.filter(p=>matchesSearch(p.name,search)||matchesSearch(p.sku,search));
   const el=document.getElementById('prod-table-wrap');if(!el)return;
   el.innerHTML=`<table>
     <thead><tr><th>#</th><th>Sản phẩm</th><th>Đơn vị bán</th><th>Tồn kho</th><th>Giá vốn</th><th>Trạng thái</th><th></th></tr></thead>
@@ -1372,12 +1441,12 @@ function showAddProduct(){
         <div class="form-group"><label>Icon</label><input class="form-control" id="np-icon" value="📦"/></div>
       </div>
       <div class="grid-2 mt-12">
-        <div class="form-group"><label>Giá vốn (đ)</label><input class="form-control" type="number" id="np-cost" placeholder="0"/></div>
+        <div class="form-group"><label>Giá vốn (đ)</label><input class="form-control" type="text" inputmode="numeric" id="np-cost" placeholder="0" oninput="filterNumInput(this,false)"/></div>
         <div class="form-group"><label>Nhà cung cấp</label><input class="form-control" id="np-sup"/></div>
       </div>
       <div class="grid-2 mt-12">
-        <div class="form-group"><label>Tồn kho</label><input class="form-control" type="number" id="np-stock" placeholder="0"/></div>
-        <div class="form-group"><label>Tồn tối thiểu</label><input class="form-control" type="number" id="np-min" placeholder="10"/></div>
+        <div class="form-group"><label>Tồn kho</label><input class="form-control" type="text" inputmode="numeric" id="np-stock" placeholder="0" oninput="filterNumInput(this,false)"/></div>
+        <div class="form-group"><label>Tồn tối thiểu</label><input class="form-control" type="text" inputmode="numeric" id="np-min" placeholder="10" oninput="filterNumInput(this,false)"/></div>
       </div>
       <div style="margin-top:16px;font-weight:700;font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.4px">Đơn vị bán (thêm nhiều loại)</div>
       <div id="units-container" style="margin-top:8px"></div>
@@ -1398,8 +1467,8 @@ function renderUnitRows(){
   c.innerHTML=window._newUnits.map((u,i)=>`
   <div style="display:flex;gap:8px;align-items:flex-end;margin-bottom:8px">
     <div class="form-group flex-1" style="margin:0"><label style="font-size:10px">Tên ĐVT</label><input class="form-control" value="${u.name}" placeholder="VD: Bao 50kg" oninput="window._newUnits[${i}].name=this.value"/></div>
-    <div class="form-group" style="margin:0;width:80px"><label style="font-size:10px">Quy đổi</label><input class="form-control" type="number" value="${u.ratio}" title="1 bao = X kg" oninput="window._newUnits[${i}].ratio=+this.value"/></div>
-    <div class="form-group flex-1" style="margin:0"><label style="font-size:10px">Giá bán</label><input class="form-control" type="number" value="${u.price||''}" placeholder="0" oninput="window._newUnits[${i}].price=+this.value"/></div>
+    <div class="form-group" style="margin:0;width:80px"><label style="font-size:10px">Quy đổi</label><input class="form-control" type="text" inputmode="decimal" value="${u.ratio}" title="1 bao = X kg" oninput="filterNumInput(this,true);window._newUnits[${i}].ratio=+this.value"/></div>
+    <div class="form-group flex-1" style="margin:0"><label style="font-size:10px">Giá bán</label><input class="form-control" type="text" inputmode="numeric" value="${u.price||''}" placeholder="0" oninput="filterNumInput(this,false);window._newUnits[${i}].price=+this.value"/></div>
     ${i>0?`<button class="btn btn-red btn-sm btn-icon" onclick="window._newUnits.splice(${i},1);renderUnitRows()">✕</button>`:''} 
   </div>`).join('');
 }
@@ -1437,12 +1506,12 @@ function showEditProduct(id){
         <div class="form-group"><label>Icon</label><input class="form-control" id="ep-icon" value="${p.icon}"/></div>
       </div>
       <div class="grid-2 mt-12">
-        <div class="form-group"><label>Giá vốn</label><input class="form-control" type="number" id="ep-cost" value="${p.cost}"/></div>
+        <div class="form-group"><label>Giá vốn</label><input class="form-control" type="text" inputmode="numeric" id="ep-cost" value="${p.cost}" oninput="filterNumInput(this,false)"/></div>
         <div class="form-group"><label>Nhà cung cấp</label><input class="form-control" id="ep-sup" value="${p.supplier}"/></div>
       </div>
       <div class="grid-2 mt-12">
-        <div class="form-group"><label>Tồn kho</label><input class="form-control" type="number" id="ep-stock" value="${p.stock}"/></div>
-        <div class="form-group"><label>Tồn tối thiểu</label><input class="form-control" type="number" id="ep-min" value="${p.minStock}"/></div>
+        <div class="form-group"><label>Tồn kho</label><input class="form-control" type="text" inputmode="numeric" id="ep-stock" value="${p.stock}" oninput="filterNumInput(this,false)"/></div>
+        <div class="form-group"><label>Tồn tối thiểu</label><input class="form-control" type="text" inputmode="numeric" id="ep-min" value="${p.minStock}" oninput="filterNumInput(this,false)"/></div>
       </div>
       <div style="margin-top:16px;font-weight:700;font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.4px">Đơn vị bán</div>
       <div id="edit-units-container" style="margin-top:8px"></div>
@@ -1461,8 +1530,8 @@ function renderEditUnitRows(){
   c.innerHTML=window._editUnits.map((u,i)=>`
   <div style="display:flex;gap:8px;align-items:flex-end;margin-bottom:8px">
     <div class="form-group flex-1" style="margin:0"><label style="font-size:10px">Tên ĐVT</label><input class="form-control" value="${u.name}" oninput="window._editUnits[${i}].name=this.value"/></div>
-    <div class="form-group" style="margin:0;width:80px"><label style="font-size:10px">Quy đổi</label><input class="form-control" type="number" value="${u.ratio}" oninput="window._editUnits[${i}].ratio=+this.value"/></div>
-    <div class="form-group flex-1" style="margin:0"><label style="font-size:10px">Giá bán</label><input class="form-control" type="number" value="${u.price}" oninput="window._editUnits[${i}].price=+this.value"/></div>
+    <div class="form-group" style="margin:0;width:80px"><label style="font-size:10px">Quy đổi</label><input class="form-control" type="text" inputmode="decimal" value="${u.ratio}" oninput="filterNumInput(this,true);window._editUnits[${i}].ratio=+this.value"/></div>
+    <div class="form-group flex-1" style="margin:0"><label style="font-size:10px">Giá bán</label><input class="form-control" type="text" inputmode="numeric" value="${u.price}" oninput="filterNumInput(this,false);window._editUnits[${i}].price=+this.value"/></div>
     ${i>0?`<button class="btn btn-red btn-sm btn-icon" onclick="window._editUnits.splice(${i},1);renderEditUnitRows()">✕</button>`:''}
   </div>`).join('');
 }
@@ -1534,18 +1603,50 @@ function showAddImport(){
 }
 function renderImpRows(){
   const c=document.getElementById('imp-rows');if(!c)return;
-  c.innerHTML=_impItems.map((item,i)=>`
+  c.innerHTML=_impItems.map((item,i)=>{
+    const picked=DB.products.find(x=>x.id===item.productId);
+    return `
   <div style="display:flex;gap:6px;align-items:flex-end;margin-bottom:8px;flex-wrap:wrap">
-    <div class="form-group" style="margin:0;flex:2;min-width:140px"><label style="font-size:10px">Sản phẩm</label>
-      <select class="form-control" onchange="_impItems[${i}].productId=this.value;const p=DB.products.find(x=>x.id===this.value);if(p)_impItems[${i}].cost=p.cost;renderImpRows()">
-        <option value="">-- Chọn --</option>
-        ${DB.products.map(p=>`<option value="${p.id}" ${item.productId===p.id?'selected':''}>${p.name}</option>`).join('')}
-      </select></div>
-    <div class="form-group" style="margin:0;width:80px"><label style="font-size:10px">SL (bao)</label><input class="form-control" type="number" value="${item.qty||''}" oninput="_impItems[${i}].qty=+this.value;calcImpTotal()"/></div>
-    <div class="form-group" style="margin:0;flex:1;min-width:100px"><label style="font-size:10px">Giá nhập/bao</label><input class="form-control" type="number" value="${item.cost||''}" oninput="_impItems[${i}].cost=+this.value;calcImpTotal()"/></div>
+    <div class="form-group ac-wrap" style="margin:0;flex:2;min-width:140px;position:relative"><label style="font-size:10px">Sản phẩm</label>
+      <input class="form-control" id="imp-prod-inp-${i}" placeholder="Gõ tên sản phẩm..." value="${picked?picked.name:''}" autocomplete="off"
+        oninput="impRowSearch(${i},this.value)"
+        onfocus="impRowSearch(${i},this.value)"
+        onblur="impRowBlur(${i})"/>
+      <div id="imp-ac-${i}" class="ac-dropdown"></div>
+    </div>
+    <div class="form-group" style="margin:0;width:80px"><label style="font-size:10px">SL (bao)</label><input class="form-control" type="text" inputmode="numeric" value="${item.qty||''}" oninput="filterNumInput(this,false);_impItems[${i}].qty=+this.value;calcImpTotal()"/></div>
+    <div class="form-group" style="margin:0;flex:1;min-width:100px"><label style="font-size:10px">Giá nhập/bao</label><input class="form-control" type="text" inputmode="numeric" id="imp-cost-${i}" value="${item.cost||''}" oninput="filterNumInput(this,false);_impItems[${i}].cost=+this.value;calcImpTotal()"/></div>
     <button class="btn btn-red btn-sm btn-icon" onclick="_impItems.splice(${i},1);renderImpRows()">✕</button>
-  </div>`).join('');
+  </div>`;}).join('');
   calcImpTotal();
+}
+function impRowSearch(i,q){
+  const el=document.getElementById('imp-ac-'+i);if(!el)return;
+  q=(q||'').trim();
+  if(!q){el.style.display='none';el.innerHTML='';return;}
+  const matches=DB.products.filter(p=>matchesSearch(p.name,q)).slice(0,6);
+  if(!matches.length){el.innerHTML='<div class="ac-empty">Không tìm thấy</div>';el.style.display='block';return;}
+  el.innerHTML=matches.map(p=>`<div class="ac-item" onmousedown="pickImpProd(${i},'${p.id}')">${p.icon} ${p.name}</div>`).join('');
+  el.style.display='block';
+}
+function pickImpProd(i,id){
+  const p=DB.products.find(x=>x.id===id);if(!p)return;
+  _impItems[i].productId=id;
+  _impItems[i].cost=p.cost;
+  const inp=document.getElementById('imp-prod-inp-'+i);if(inp)inp.value=p.name;
+  const costInp=document.getElementById('imp-cost-'+i);if(costInp)costInp.value=p.cost;
+  const ac=document.getElementById('imp-ac-'+i);if(ac){ac.style.display='none';ac.innerHTML='';}
+  calcImpTotal();
+}
+function impRowBlur(i){
+  setTimeout(()=>{
+    const ac=document.getElementById('imp-ac-'+i);if(ac){ac.style.display='none';ac.innerHTML='';}
+    const inp=document.getElementById('imp-prod-inp-'+i);
+    if(inp){
+      const p=DB.products.find(x=>x.id===_impItems[i]?.productId);
+      inp.value=p?p.name:'';
+    }
+  },150);
 }
 function calcImpTotal(){
   const total=_impItems.reduce((s,i)=>s+(i.qty||0)*(i.cost||0),0);
@@ -1602,7 +1703,7 @@ function showAddCustomer(){
       <div class="form-group mt-12"><label>Địa chỉ</label><input class="form-control" id="nc-addr"/></div>
       <div class="grid-2 mt-12">
         <div class="form-group"><label>Hạng</label><select class="form-control" id="nc-type"><option>Thường</option><option>VIP</option><option>Sỉ</option></select></div>
-        <div class="form-group"><label>Công nợ ban đầu</label><input class="form-control" type="number" id="nc-debt" placeholder="0"/></div>
+        <div class="form-group"><label>Công nợ ban đầu</label><input class="form-control" type="text" inputmode="numeric" id="nc-debt" placeholder="0" oninput="filterNumInput(this,false)"/></div>
       </div>
       <div class="form-group mt-12"><label>Ghi chú</label><input class="form-control" id="nc-note"/></div>
     </div>
@@ -1625,7 +1726,7 @@ function showEditCustomer(id){
       <div class="form-group mt-12"><label>Địa chỉ</label><input class="form-control" id="ec-addr" value="${cu.address}"/></div>
       <div class="grid-2 mt-12">
         <div class="form-group"><label>Hạng</label><select class="form-control" id="ec-type"><option ${cu.type==='Thường'?'selected':''}>Thường</option><option ${cu.type==='VIP'?'selected':''}>VIP</option><option ${cu.type==='Sỉ'?'selected':''}>Sỉ</option></select></div>
-        <div class="form-group"><label>Công nợ (đ)</label><input class="form-control" type="number" id="ec-debt" value="${cu.debt}"/></div>
+        <div class="form-group"><label>Công nợ (đ)</label><input class="form-control" type="text" inputmode="numeric" id="ec-debt" value="${cu.debt}" oninput="filterNumInput(this,false)"/></div>
       </div>
       <div class="form-group mt-12"><label>Ghi chú</label><input class="form-control" id="ec-note" value="${cu.notes}"/></div>
     </div>
@@ -1683,7 +1784,7 @@ function showPayDebt(id){
     <div class="modal-header"><span>💵</span><h2>Thu nợ – ${cu.name}</h2><button class="btn btn-ghost btn-icon" onclick="closeModal()">✕</button></div>
     <div class="modal-body">
       <div class="alert alert-warn mb-16">💳 Đang nợ: <strong>${fmt(cu.debt)}</strong></div>
-      <div class="form-group"><label>Số tiền thu (đ)</label><input class="form-control" id="pay-amt" type="number" value="${cu.debt}"/></div>
+      <div class="form-group"><label>Số tiền thu (đ)</label><input class="form-control" id="pay-amt" type="text" inputmode="numeric" value="${cu.debt}" oninput="filterNumInput(this,false)"/></div>
     </div>
     <div class="modal-footer"><button class="btn btn-outline" onclick="closeModal()">Hủy</button><button class="btn btn-green" onclick="processPayDebt('${id}')">✅ Xác nhận thu</button></div>
   </div>`);
