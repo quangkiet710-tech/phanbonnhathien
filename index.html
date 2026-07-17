@@ -1865,7 +1865,9 @@ document.getElementById('zalo-btn').addEventListener('mouseenter',()=>document.g
 document.getElementById('zalo-btn').addEventListener('mouseleave',()=>document.getElementById('zalo-label').style.display='none');
 </script>
 
-<!-- Supabase cloud sync: tạm tắt. Khi cần bật lại, thêm 2 dòng script supabase vào đây -->
+<!-- Đồng bộ dữ liệu qua Supabase -->
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="js/supabase-sync.js"></script>
 
 </body>
 </html>
