@@ -1586,6 +1586,7 @@ function renderAdminCustomers(c){
           <td><div style="display:flex;gap:4px">
             <button class="btn btn-outline btn-sm" onclick="showEditCustomer('${cu.id}')">✏️</button>
             ${cu.debt>0?`<button class="btn btn-green btn-sm" onclick="showPayDebt('${cu.id}')">Thu nợ</button>`:''}
+            <button class="btn btn-red btn-sm" onclick="deleteCustomer('${cu.id}')">🗑</button>
           </div></td>
         </tr>`).join('')}
         </tbody>
@@ -1637,6 +1638,16 @@ function saveEditCustomer(id){
   cu.address=document.getElementById('ec-addr').value;cu.type=document.getElementById('ec-type').value;
   cu.debt=+document.getElementById('ec-debt').value||0;cu.notes=document.getElementById('ec-note').value;
   saveDB();closeModal();toast('Đã cập nhật!');
+  renderAdminCustomers(document.getElementById('admin-content'));
+}
+function deleteCustomer(id){
+  const cu=DB.customers.find(x=>x.id===id);if(!cu)return;
+  if(cu.debt>0){
+    if(!confirm(`Khách này còn nợ ${fmt(cu.debt)}, xóa sẽ mất thông tin nợ. Vẫn xóa?`))return;
+  }else{
+    if(!confirm('Xóa khách hàng này?'))return;
+  }
+  DB.customers=DB.customers.filter(x=>x.id!==id);saveDB();toast('Đã xóa khách hàng','warning');
   renderAdminCustomers(document.getElementById('admin-content'));
 }
 
