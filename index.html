@@ -1974,40 +1974,65 @@ function showEditSupplierPaid(supplier){
       <div class="form-group"><label>Tên nhà cung cấp *</label>
         <input class="form-control" id="esp-name" value="${supplier.replace(/"/g,'&quot;')}"/>
       </div>
-      <div class="form-group"><label>Số tiền đã thanh toán *</label>
-        <input class="form-control" type="text" inputmode="numeric" id="esp-paid" value="${g.paid}" oninput="filterNumInput(this,false);espCalcDebt(${g.total})"/>
+      <div class="grid-2">
+        <div class="form-group"><label>Tổng nhập</label>
+          <input class="form-control" type="text" inputmode="numeric" id="esp-total" value="${g.total}" oninput="filterNumInput(this,false);espLink('total')"/>
+        </div>
+        <div class="form-group"><label>Đã trả</label>
+          <input class="form-control" type="text" inputmode="numeric" id="esp-paid" value="${g.paid}" oninput="filterNumInput(this,false);espLink('paid')"/>
+        </div>
       </div>
-      <div style="font-size:14px;margin-bottom:10px">Còn nợ mới: <strong id="esp-debt" style="color:var(--red)"></strong></div>
-      <div class="text-xs text-muted">Số tiền sẽ được phân bổ lại vào tất cả phiếu nhập của NCC này (phiếu cũ nhất trước).</div>
+      <div class="form-group"><label>Còn nợ</label>
+        <input class="form-control" type="text" inputmode="numeric" id="esp-debt" value="${g.debt}" style="color:var(--red);font-weight:700" oninput="filterNumInput(this,false);espLink('debt')"/>
+      </div>
+      <div class="text-xs text-muted">Ba số tự cân đối: Tổng nhập = Đã trả + Còn nợ. Sửa "Còn nợ" sẽ giữ nguyên "Đã trả" và điều chỉnh "Tổng nhập". Số tiền được phân bổ lại vào các phiếu nhập của NCC này (phiếu cũ nhất trước, phần chênh tổng dồn vào phiếu mới nhất).</div>
     </div>
     <div class="modal-footer">
       <button class="btn btn-outline" onclick="closeModal()">Hủy</button>
       <button class="btn btn-green" onclick="processEditSupplierPaid('${supEsc}')">✅ Xác nhận</button>
     </div>
   </div>`);
-  espCalcDebt(g.total);
   document.getElementById('esp-paid')?.focus();
 }
-function espCalcDebt(total){
-  const paid=+(document.getElementById('esp-paid')?.value||0);
-  const el=document.getElementById('esp-debt');
-  if(el)el.textContent=fmt(Math.max(0,total-paid));
+// Giữ 3 ô Tổng/Đã trả/Còn nợ luôn cân đối theo ô vừa sửa
+function espLink(changed){
+  const t=document.getElementById('esp-total'),p=document.getElementById('esp-paid'),d=document.getElementById('esp-debt');
+  if(!t||!p||!d)return;
+  let total=+t.value||0,paid=+p.value||0,debt=+d.value||0;
+  if(changed==='debt'){
+    total=paid+debt;t.value=total;
+  }else if(changed==='paid'){
+    if(paid>total){total=paid;t.value=total;}
+    d.value=total-paid;
+  }else{
+    if(paid>total){paid=total;p.value=paid;}
+    d.value=total-paid;
+  }
 }
 function processEditSupplierPaid(supplier){
   const g=supplierDebtGroups().find(x=>x.supplier===supplier);
   if(!g){toast('Không tìm thấy NCC!','error');return;}
   const newName=(document.getElementById('esp-name')?.value||'').trim();
   const paid=+(document.getElementById('esp-paid')?.value||0);
+  const debt=+(document.getElementById('esp-debt')?.value||0);
+  const total=paid+debt; // luôn cân đối theo 2 số người dùng thấy trên form
   if(!newName){toast('Nhập tên nhà cung cấp!','error');return;}
-  if(paid>g.total){toast(`Không được vượt tổng nhập (${fmt(g.total)})!`,'error');return;}
   // Nếu đổi tên trùng với NCC khác đang có → hỏi trước khi gộp chung công nợ
   if(newName!==supplier){
     const clash=(DB.stockImports||[]).some(i=>supKey(i)!==supplier&&supKey(i)===newName);
     if(clash&&!confirm(`NCC "${newName}" đã tồn tại. Gộp chung công nợ hai NCC này?`))return;
   }
-  // Phân bổ lại toàn bộ số đã trả vào các phiếu nhập: phiếu cũ nhất trước
   const imps=(DB.stockImports||[]).filter(i=>supKey(i)===supplier)
     .sort((a,b)=>(a.date||'').localeCompare(b.date||''));
+  // 1. Nếu tổng nhập thay đổi: dồn phần chênh lệch vào phiếu mới nhất (không để phiếu âm)
+  const sumOld=imps.reduce((s,i)=>s+(i.total||0),0);
+  let delta=total-sumOld;
+  for(let k=imps.length-1;k>=0&&delta!==0;k--){
+    const nt=Math.max(0,(imps[k].total||0)+delta);
+    delta-=(nt-(imps[k].total||0));
+    imps[k].total=nt;
+  }
+  // 2. Phân bổ số đã trả vào các phiếu: phiếu cũ nhất trước
   let remaining=paid;
   imps.forEach(imp=>{
     const pay=Math.min(remaining,imp.total||0);
@@ -2017,7 +2042,7 @@ function processEditSupplierPaid(supplier){
   });
   if(newName!==supplier)imps.forEach(imp=>{imp.supplier=newName;});
   saveDB();closeModal();
-  toast(`Đã cập nhật${newName!==supplier?` (đổi tên thành "${newName}")`:''}: đã trả ${fmt(paid)}, còn nợ ${fmt(Math.max(0,g.total-paid))}`);
+  toast(`Đã cập nhật${newName!==supplier?` (đổi tên thành "${newName}")`:''}: tổng nhập ${fmt(total)}, đã trả ${fmt(paid)}, còn nợ ${fmt(debt)}`);
   renderAdminSupplierDebts(document.getElementById('admin-content'));
 }
 
