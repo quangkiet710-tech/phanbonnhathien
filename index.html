@@ -283,6 +283,8 @@ tr:hover td{background:var(--g50);}
 .pos-prod-card .p-name{font-size:12.5px;font-weight:700;margin-bottom:4px;line-height:1.3;}
 .pos-prod-card .p-price{font-size:13px;font-weight:900;color:var(--g800);}
 .pos-prod-card .p-stock{font-size:10.5px;color:var(--muted);margin-top:2px;}
+.prod-sec-head{display:flex;align-items:center;gap:8px;font-weight:800;font-size:13px;letter-spacing:.5px;margin:4px 0 10px;padding:8px 12px;border-radius:8px;border-left:4px solid;}
+.prod-sec-head:not(:first-child){margin-top:16px;}
 
 /* CART */
 .cart-header{padding:12px 16px;background:var(--g50);border-bottom:1px solid var(--border);font-weight:800;font-size:14px;display:flex;align-items:center;gap:8px;}
@@ -822,7 +824,11 @@ function renderCustShop(c){
   <div style="padding:8px 12px;display:flex;gap:6px;overflow-x:auto;flex-wrap:nowrap">
     ${cats.map(cat=>`<button class="unit-btn ${activeCat===cat?'active':''}" style="white-space:nowrap" onclick="window._shopCat='${cat}';renderCustShop(document.getElementById('cust-content'))">${cat}</button>`).join('')}
   </div>
-  <div class="prod-grid">${prods.map(p=>prodCardHTML(p)).join('')||'<p style="padding:32px;text-align:center;color:var(--muted);grid-column:1/-1">Không tìm thấy sản phẩm</p>'}</div>
+  ${prods.length?(()=>{const g=groupProdsByType(prods);return ['phan','thuoc','giong'].map(key=>{
+    const list=g[key];
+    if(!list.length)return'';
+    return `<div style="padding:0 12px">${prodSecHeadHTML(key,list.length)}</div><div class="prod-grid">${list.map(p=>prodCardHTML(p)).join('')}</div>`;
+  }).join('');})():'<p style="padding:32px;text-align:center;color:var(--muted)">Không tìm thấy sản phẩm</p>'}
   <div style="height:80px"></div>`;
   renderShopSearchAC();
 }
@@ -1120,6 +1126,33 @@ function showAdminPage(page){
 }
 function toggleSidebar(){document.getElementById('admin-sidebar').classList.toggle('open');}
 
+/* ---- PRODUCT TYPE (Phân loại tự động: Phân / Thuốc / Giống cây) ---- */
+const PROD_TYPES={
+  phan:{label:'PHÂN',icon:'🌾',color:'#16a34a'},
+  thuoc:{label:'THUỐC',icon:'💊',color:'#dc2626'},
+  giong:{label:'GIỐNG CÂY',icon:'🌱',color:'#2563eb'}
+};
+// Tự nhận diện loại từ tên + danh mục (so khớp theo từ, không dính chuỗi con như "BIDAMIN" ≠ "đạm")
+function detectProdType(p){
+  const s=' '+stripDiacritics((p.name||'')+' '+(p.cat||''))+' ';
+  const hasW=w=>s.includes(' '+w+' ');
+  if(hasW('giong')||s.includes(' hat giong '))return'giong';
+  if(['phan','ure','urea','dap','npk','kali','kcl','lan','dam','sa','dyt','humic'].some(hasW)
+    ||s.includes(' huu co ')||s.includes(' vi luong ')||s.includes(' trung luong '))return'phan';
+  return'thuoc';
+}
+// Chia danh sách thành 3 nhóm, mỗi nhóm sắp A-Z tiếng Việt
+function groupProdsByType(prods){
+  const g={phan:[],thuoc:[],giong:[]};
+  (prods||[]).forEach(p=>g[detectProdType(p)].push(p));
+  Object.values(g).forEach(a=>a.sort((x,y)=>(x.name||'').localeCompare(y.name||'','vi',{sensitivity:'base'})));
+  return g;
+}
+function prodSecHeadHTML(key,count){
+  const t=PROD_TYPES[key];
+  return `<div class="prod-sec-head" style="border-left-color:${t.color};background:${t.color}1a;color:${t.color}">${t.icon} ${t.label} (A-Z)<span style="font-weight:600;opacity:.75;font-size:11px">— ${count} SP</span></div>`;
+}
+
 /* ---- POS ---- */
 let posCart=[], posCatFilter='all', posSearchStr='', posCustomerId='';
 
@@ -1177,14 +1210,20 @@ function pickPOSSearch(id){
 function renderPOSProducts(){
   const prods=DB.products.filter(p=>(posCatFilter==='all'||p.cat===posCatFilter)&&matchesSearch(p.name,posSearchStr));
   const el=document.getElementById('pos-prods');if(!el)return;
-  el.innerHTML=`<div class="pos-prod-grid">${prods.map(p=>`
+  const card=p=>`
     <div class="pos-prod-card" onclick="showPOSProdSelect('${p.id}')">
       <div class="p-icon">${p.icon}</div>
       <div class="p-name">${p.name}</div>
       <div class="p-price">${fmt(p.units[0]?.price||p.price)}</div>
       <div class="p-stock ${p.stock<=p.minStock?'text-red':'text-muted'}">Kho: ${p.stock}</div>
-    </div>`).join('')||'<div style="grid-column:1/-1;text-align:center;padding:32px;color:var(--muted)">Không tìm thấy</div>'}
-  </div>`;
+    </div>`;
+  if(!prods.length){el.innerHTML='<div style="text-align:center;padding:32px;color:var(--muted)">Không tìm thấy</div>';return;}
+  const g=groupProdsByType(prods);
+  el.innerHTML=['phan','thuoc','giong'].map(key=>{
+    const list=g[key];
+    if(!list.length)return'';
+    return prodSecHeadHTML(key,list.length)+`<div class="pos-prod-grid">${list.map(card).join('')}</div>`;
+  }).join('');
 }
 
 function showPOSProdSelect(id){
@@ -1417,11 +1456,11 @@ function renderAdminProductsTable(){
   const search=(document.getElementById('prod-search')?.value||'');
   const prods=DB.products.filter(p=>matchesSearch(p.name,search)||matchesSearch(p.sku,search));
   const el=document.getElementById('prod-table-wrap');if(!el)return;
-  el.innerHTML=`<table>
-    <thead><tr><th>#</th><th>Sản phẩm</th><th>Đơn vị bán</th><th>Tồn kho</th><th>Giá vốn</th><th>Trạng thái</th><th></th></tr></thead>
-    <tbody>${prods.map((p,i)=>`
+  const g=groupProdsByType(prods);
+  let idx=0;
+  const row=p=>{idx++;return `
     <tr>
-      <td>${i+1}</td>
+      <td>${idx}</td>
       <td><div style="font-weight:700">${p.icon} ${p.name}</div><div class="text-xs text-muted">${p.sku} | ${p.cat}</div></td>
       <td>${p.units.map(u=>`<span class="badge badge-gray" style="margin:1px">${u.name}: ${fmt(u.price)}</span>`).join('')}</td>
       <td class="${p.stock<=p.minStock?'text-red font-bold':'text-green'}">${p.stock} ${p.stock<=p.minStock?'⚠️':''}</td>
@@ -1431,7 +1470,14 @@ function renderAdminProductsTable(){
         <button class="btn btn-outline btn-sm" onclick="showEditProduct('${p.id}')">✏️</button>
         <button class="btn btn-red btn-sm" onclick="deleteProduct('${p.id}')">🗑</button>
       </div></td>
-    </tr>`).join('')}
+    </tr>`;};
+  el.innerHTML=`<table>
+    <thead><tr><th>#</th><th>Sản phẩm</th><th>Đơn vị bán</th><th>Tồn kho</th><th>Giá vốn</th><th>Trạng thái</th><th></th></tr></thead>
+    <tbody>${['phan','thuoc','giong'].map(key=>{
+      const t=PROD_TYPES[key],list=g[key];
+      if(!list.length)return'';
+      return `<tr><td colspan="7" style="background:${t.color}1a;border-left:4px solid ${t.color};font-weight:800;color:${t.color}">${t.icon} ${t.label} (A-Z) — ${list.length} SP</td></tr>`+list.map(row).join('');
+    }).join('')||'<tr><td colspan="7" class="text-center text-muted" style="padding:24px">Không tìm thấy sản phẩm</td></tr>'}
     </tbody></table>`;
 }
 
