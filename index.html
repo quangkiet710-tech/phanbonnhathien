@@ -461,6 +461,7 @@ tr:hover td{background:var(--g50);}
       <div class="sidebar-item active" onclick="showAdminPage('pos')"><span class="s-icon">🛒</span>Bán hàng</div>
       <div class="sidebar-item" onclick="showAdminPage('invoices')"><span class="s-icon">📋</span>Hóa đơn</div>
       <div class="sidebar-item" onclick="showAdminPage('dailysales')"><span class="s-icon">📝</span>Sổ bán hàng</div>
+      <div class="sidebar-item" onclick="showAdminPage('pricehistory')"><span class="s-icon">📈</span>Lịch sử giá</div>
       <div class="sidebar-section">Kho & Hàng hóa</div>
       <div class="sidebar-item" onclick="showAdminPage('products')"><span class="s-icon">📦</span>Sản phẩm</div>
       <div class="sidebar-item" onclick="showAdminPage('inventory')"><span class="s-icon">🏭</span>Nhập kho</div>
@@ -546,7 +547,8 @@ const DEFAULT = {
   ],
   stockImports:[],
   custOrders:[],
-  dailySales:[]
+  dailySales:[],
+  priceHistory:[]
 };
 
 function loadDB(){try{const r=localStorage.getItem(KEY);if(r)return JSON.parse(r);}catch(e){}return JSON.parse(JSON.stringify(DEFAULT));}
@@ -1114,7 +1116,7 @@ function showAdminPage(page){
   // close sidebar on mobile
   if(window.innerWidth<768)document.getElementById('admin-sidebar').classList.remove('open');
   const c=document.getElementById('admin-content');
-  ({pos:renderAdminPOS,dashboard:renderAdminDash,products:renderAdminProducts,inventory:renderAdminInventory,batchimport:renderBatchImport,customers:renderAdminCustomers,debt:renderAdminDebt,supplierdebts:renderAdminSupplierDebts,invoices:renderAdminInvoices,dailysales:renderAdminDailySales,settings:renderAdminSettings}[page]||renderAdminDash)(c);
+  ({pos:renderAdminPOS,dashboard:renderAdminDash,products:renderAdminProducts,inventory:renderAdminInventory,batchimport:renderBatchImport,customers:renderAdminCustomers,debt:renderAdminDebt,supplierdebts:renderAdminSupplierDebts,invoices:renderAdminInvoices,dailysales:renderAdminDailySales,pricehistory:renderAdminPriceHistory,settings:renderAdminSettings}[page]||renderAdminDash)(c);
 }
 function toggleSidebar(){document.getElementById('admin-sidebar').classList.toggle('open');}
 
@@ -1326,6 +1328,7 @@ function posCheckout(isDebt){
     total,paid:cash,debt,status:debt>0?'partial':'paid'
   };
   DB.invoices.unshift(inv);
+  addPriceHistory('selling',inv.items.map(x=>({productId:x.productId,name:x.name,price:x.price,qty:x.qty})),inv.date,inv.id,'invoice');
   // Update stock (rough: per bag unit)
   posCart.forEach(item=>{
     const p=DB.products.find(x=>x.id===item.productId);
@@ -1667,6 +1670,7 @@ function saveImport(){
   const imp={id:'NK'+Date.now().toString().slice(-6),date,supplier:sup,
     items:valid.map(i=>{const p=DB.products.find(x=>x.id===i.productId);return{productId:i.productId,name:p?.name||'',qty:i.qty,cost:i.cost};}),total,paid:0,debt:total};
   DB.stockImports.unshift(imp);
+  addPriceHistory('cost',imp.items.map(x=>({productId:x.productId,name:x.name,price:x.cost,qty:x.qty})),date,imp.id,'stockImport');
   valid.forEach(item=>{const p=DB.products.find(x=>x.id===item.productId);if(p){p.stock+=item.qty;p.cost=item.cost;}});
   saveDB();closeModal();toast(`Nhập kho thành công! ${fmt(total)}`);
   renderAdminInventory(document.getElementById('admin-content'));
@@ -1787,13 +1791,15 @@ function runBatchImport(){
     }
   });
   // Ghi lại 1 phiếu nhập kho để lưu lịch sử
-  DB.stockImports.unshift({
+  const bImp={
     id:'NK'+Date.now().toString().slice(-6),
     date:data.date||today(),
     supplier:data.supplier||'',
     note:data.note||'',
     items:impItems,total:grand,paid:0,debt:grand
-  });
+  };
+  DB.stockImports.unshift(bImp);
+  addPriceHistory('cost',bImp.items.map(x=>({productId:x.productId,name:x.name,price:x.cost,qty:x.qty})),bImp.date,bImp.id,'stockImport');
   saveDB();
   toast(`Đã nhập: ${cntNew} món mới, ${cntDup} món cộng kho`);
   renderBatchImport(document.getElementById('admin-content'));
@@ -2212,13 +2218,15 @@ function saveDailySales(editId){
     e.items=JSON.parse(JSON.stringify(dailySalesCart));
     e.totalAmount=totalAmount;
   }else{
-    DB.dailySales.unshift({
+    const entry={
       id:'SB'+Date.now().toString().slice(-6),
       date,
       time:new Date().toTimeString().slice(0,5),
       items:JSON.parse(JSON.stringify(dailySalesCart)),
       totalAmount,note
-    });
+    };
+    DB.dailySales.unshift(entry);
+    addPriceHistory('selling',entry.items,date,entry.id,'dailySales');
   }
   saveDB();
   closeModal();
@@ -2235,6 +2243,174 @@ function deleteDailySales(id){
   saveDB();
   toast('Đã xóa ghi chép','warning');
   renderDailySalesTable();
+}
+
+/* ---- PRICE HISTORY (Lịch sử giá theo ngày) ---- */
+let phFilter={productId:'',from:'',to:'',q:''};
+
+// Ghi lịch sử giá — chỉ auto-log khi có hành động nhập/bán, không tính lại dữ liệu cũ
+function addPriceHistory(type,items,date,sourceId,sourceType){
+  if(!Array.isArray(DB.priceHistory))DB.priceHistory=[];
+  (items||[]).forEach(it=>{
+    if(!it.productId)return;
+    DB.priceHistory.unshift({
+      id:'PH'+uid(),date:date||today(),
+      productId:it.productId,productName:it.name||'',
+      type,price:+it.price||0,qty:+it.qty||1,
+      sourceId:sourceId||'',sourceType:sourceType||''
+    });
+  });
+}
+
+function phFiltered(){
+  if(!Array.isArray(DB.priceHistory))DB.priceHistory=[];
+  return DB.priceHistory.filter(r=>{
+    if(phFilter.productId&&r.productId!==phFilter.productId)return false;
+    if(!phFilter.productId&&phFilter.q&&!matchesSearch(r.productName,phFilter.q))return false;
+    if(phFilter.from&&r.date<phFilter.from)return false;
+    if(phFilter.to&&r.date>phFilter.to)return false;
+    return true;
+  }).sort((a,b)=>(b.date||'').localeCompare(a.date||''));
+}
+
+function renderAdminPriceHistory(c){
+  c.innerHTML=`
+  <div class="admin-page-header"><span>📈</span><h1>Lịch sử giá</h1><button class="btn btn-outline btn-sm" onclick="exportPriceHistoryCSV()">📤 Xuất Excel</button></div>
+  <div class="page-body-scroll">
+    <div class="card mb-16">
+      <div class="card-body" style="display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap">
+        <div class="form-group ac-wrap" style="margin:0;flex:2;min-width:170px;position:relative"><label style="font-size:10px">Sản phẩm</label>
+          <input class="form-control" id="ph-prod-inp" placeholder="Tất cả — gõ tên để lọc..." autocomplete="off"
+            oninput="phSearchProd(this.value)" onfocus="phSearchProd(this.value)"
+            onblur="setTimeout(()=>{const a=document.getElementById('ph-ac');if(a){a.style.display='none';a.innerHTML='';}},150)"/>
+          <div id="ph-ac" class="ac-dropdown"></div>
+        </div>
+        <div class="form-group" style="margin:0"><label style="font-size:10px">Từ ngày</label><input class="form-control" type="date" id="ph-from" value="${phFilter.from}" onchange="phFilter.from=this.value;renderPriceHistoryResults()"/></div>
+        <div class="form-group" style="margin:0"><label style="font-size:10px">Đến ngày</label><input class="form-control" type="date" id="ph-to" value="${phFilter.to}" onchange="phFilter.to=this.value;renderPriceHistoryResults()"/></div>
+        <button class="btn btn-outline btn-sm" onclick="phFilter={productId:'',from:'',to:'',q:''};renderAdminPriceHistory(document.getElementById('admin-content'))">↺ Xóa lọc</button>
+      </div>
+    </div>
+    <div id="ph-results"></div>
+  </div>`;
+  if(phFilter.productId){
+    const p=DB.products.find(x=>x.id===phFilter.productId);
+    const inp=document.getElementById('ph-prod-inp');
+    if(p&&inp){inp.value=p.name;inp.dataset.pid=p.id;}
+  }else if(phFilter.q){
+    const inp=document.getElementById('ph-prod-inp');
+    if(inp)inp.value=phFilter.q;
+  }
+  renderPriceHistoryResults();
+}
+
+function phSearchProd(q){
+  const el=document.getElementById('ph-ac');if(!el)return;
+  const inp=document.getElementById('ph-prod-inp');
+  if(inp)inp.dataset.pid='';
+  phFilter.productId='';
+  phFilter.q=(q||'').trim();
+  renderPriceHistoryResults();
+  if(!phFilter.q){el.style.display='none';el.innerHTML='';return;}
+  const matches=DB.products.filter(p=>matchesSearch(p.name,phFilter.q)).slice(0,6);
+  if(!matches.length){el.style.display='none';el.innerHTML='';return;}
+  el.innerHTML=matches.map(p=>`<div class="ac-item" onmousedown="phPickProd('${p.id}')">${p.icon} ${p.name}</div>`).join('');
+  el.style.display='block';
+}
+
+function phPickProd(id){
+  const p=DB.products.find(x=>x.id===id);if(!p)return;
+  phFilter.productId=id;phFilter.q='';
+  const inp=document.getElementById('ph-prod-inp');if(inp){inp.value=p.name;inp.dataset.pid=id;}
+  const el=document.getElementById('ph-ac');if(el){el.style.display='none';el.innerHTML='';}
+  renderPriceHistoryResults();
+}
+
+function renderPriceHistoryResults(){
+  const c=document.getElementById('ph-results');if(!c)return;
+  const rows=phFiltered();
+  const costRows=rows.filter(r=>r.type==='cost');
+  const sellRows=rows.filter(r=>r.type==='selling');
+  const wavg=arr=>{const q=arr.reduce((s,r)=>s+(r.qty||1),0);return q?arr.reduce((s,r)=>s+r.price*(r.qty||1),0)/q:0;};
+  const avgCost=wavg(costRows),avgSell=wavg(sellRows);
+  const margin=avgCost>0?((avgSell-avgCost)/avgCost*100):0;
+  c.innerHTML=`
+    <div class="stat-grid" style="grid-template-columns:repeat(3,1fr);margin-bottom:16px">
+      <div class="stat-card"><div class="s-label">Giá nhập TB</div><div class="s-val" style="font-size:16px">${costRows.length?fmt(avgCost):'—'}</div></div>
+      <div class="stat-card"><div class="s-label">Giá bán TB</div><div class="s-val text-green" style="font-size:16px">${sellRows.length?fmt(avgSell):'—'}</div></div>
+      <div class="stat-card"><div class="s-label">Biến động giá</div><div class="s-val ${margin>=0?'text-green':'text-red'}" style="font-size:16px">${(costRows.length&&sellRows.length)?(margin>=0?'+':'')+margin.toFixed(1)+'%':'—'}</div></div>
+    </div>
+    ${phChartHTML(rows)}
+    <div class="card">
+      <div class="card-header">📈 Lịch sử giá (${rows.length})</div>
+      <div class="tbl-wrap"><table>
+        <thead><tr><th>Loại</th><th>Ngày</th><th>Sản phẩm</th><th>Giá</th><th>Số lượng</th><th>Nguồn</th></tr></thead>
+        <tbody>${rows.map(r=>`<tr>
+          <td>${r.type==='cost'?'<span class="badge badge-amber">📥 Nhập</span>':'<span class="badge badge-green">💰 Bán</span>'}</td>
+          <td>${fmtD(r.date)}</td>
+          <td>${r.productName}</td>
+          <td class="font-bold">${fmt(r.price)}</td>
+          <td>${r.qty}</td>
+          <td class="text-muted text-xs"><code>${r.sourceId||'—'}</code></td>
+        </tr>`).join('')||'<tr><td colspan="6" class="text-center text-muted" style="padding:24px">Chưa có dữ liệu — giá sẽ tự ghi khi nhập kho hoặc bán hàng</td></tr>'}
+        </tbody>
+      </table></div>
+    </div>`;
+}
+
+// Biểu đồ SVG thuần (không cần thư viện): 2 đường — nhập (đỏ), bán (xanh). Chỉ vẽ khi đã chọn 1 sản phẩm.
+function phChartHTML(rows){
+  if(!phFilter.productId)return'';
+  const byDate={};
+  [...rows].sort((a,b)=>(a.date||'').localeCompare(b.date||'')).forEach(r=>{
+    if(!byDate[r.date])byDate[r.date]={};
+    byDate[r.date][r.type]=r.price; // giá cuối cùng trong ngày
+  });
+  const dates=Object.keys(byDate).sort();
+  if(dates.length<2)return'';
+  const W=700,H=230,PL=78,PR=16,PT=14,PB=36;
+  const all=[];dates.forEach(d=>{const o=byDate[d];if(o.cost!==undefined)all.push(o.cost);if(o.selling!==undefined)all.push(o.selling);});
+  const min=Math.min(...all),max=Math.max(...all),span=(max-min)||1;
+  const x=i=>PL+(W-PL-PR)*(dates.length===1?0.5:i/(dates.length-1));
+  const y=v=>PT+(H-PT-PB)*(1-(v-min)/span);
+  const mk=(type,color)=>{
+    const pts=dates.map((d,i)=>byDate[d][type]!==undefined?[x(i),y(byDate[d][type])]:null).filter(Boolean);
+    return (pts.length>1?`<polyline fill="none" stroke="${color}" stroke-width="2.5" points="${pts.map(p=>p.map(n=>n.toFixed(1)).join(',')).join(' ')}"/>`:'')
+      +pts.map(p=>`<circle cx="${p[0].toFixed(1)}" cy="${p[1].toFixed(1)}" r="3.5" fill="${color}"/>`).join('');
+  };
+  const xLabels=dates.map((d,i)=>(dates.length<=8||i===0||i===dates.length-1||i===Math.floor(dates.length/2))?`<text x="${x(i).toFixed(1)}" y="${H-10}" text-anchor="middle" font-size="10" fill="currentColor" opacity=".65">${fmtD(d)}</text>`:'').join('');
+  return `<div class="card mb-16">
+    <div class="card-header">📊 Biểu đồ giá theo ngày
+      <span style="font-weight:600;font-size:11px;margin-left:auto;display:inline-flex;gap:12px;align-items:center">
+        <span><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:#f87171"></span> Giá nhập</span>
+        <span><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:#4ade80"></span> Giá bán</span>
+      </span>
+    </div>
+    <div class="card-body" style="overflow-x:auto">
+      <svg viewBox="0 0 ${W} ${H}" style="width:100%;min-width:480px;max-height:260px;color:var(--muted,#888)">
+        <line x1="${PL}" y1="${y(min).toFixed(1)}" x2="${W-PR}" y2="${y(min).toFixed(1)}" stroke="currentColor" opacity=".25"/>
+        <line x1="${PL}" y1="${y(max).toFixed(1)}" x2="${W-PR}" y2="${y(max).toFixed(1)}" stroke="currentColor" opacity=".25" stroke-dasharray="4 3"/>
+        <text x="${PL-6}" y="${(y(max)+4).toFixed(1)}" text-anchor="end" font-size="10" fill="currentColor" opacity=".75">${fmt(max)}</text>
+        <text x="${PL-6}" y="${(y(min)+4).toFixed(1)}" text-anchor="end" font-size="10" fill="currentColor" opacity=".75">${fmt(min)}</text>
+        ${mk('cost','#f87171')}${mk('selling','#4ade80')}
+        ${xLabels}
+      </svg>
+    </div>
+  </div>`;
+}
+
+function exportPriceHistoryCSV(){
+  const rows=phFiltered();
+  if(!rows.length){toast('Không có dữ liệu để xuất!','warning');return;}
+  const esc=v=>{v=String(v==null?'':v);return /[",\n;]/.test(v)?'"'+v.replace(/"/g,'""')+'"':v;};
+  const lines=[['Loại','Ngày','Sản phẩm','Giá','Số lượng','Nguồn'].join(',')];
+  rows.forEach(r=>lines.push([r.type==='cost'?'Nhập':'Bán',r.date,esc(r.productName),r.price,r.qty,esc(r.sourceId||'')].join(',')));
+  const blob=new Blob(['﻿'+lines.join('\r\n')],{type:'text/csv;charset=utf-8'});
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(blob);
+  a.download='lich-su-gia-'+today()+'.csv';
+  a.click();
+  URL.revokeObjectURL(a.href);
+  toast('Đã xuất file CSV (mở được bằng Excel)!');
 }
 
 /* ---- INVOICES ---- */
@@ -2291,6 +2467,7 @@ function confirmOrder(id){
     total:o.total,paid:o.payMode==='cash'?0:o.total,debt:o.payMode==='cash'?o.total:0,
     status:o.payMode==='cash'?'partial':'paid'};
   DB.invoices.unshift(inv);
+  addPriceHistory('selling',inv.items.map(x=>({productId:x.productId,name:x.name,price:x.price,qty:x.qty})),inv.date,inv.id,'invoice');
   if(customer&&o.payMode==='cash')customer.debt=(customer.debt||0)+o.total;
   saveDB();toast('Đã xác nhận đơn hàng!');
   renderAdminInvoices(document.getElementById('admin-content'));
