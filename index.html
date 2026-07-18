@@ -1136,9 +1136,21 @@ const PROD_TYPES={
 function detectProdType(p){
   const s=' '+stripDiacritics((p.name||'')+' '+(p.cat||''))+' ';
   const hasW=w=>s.includes(' '+w+' ');
-  if(hasW('giong')||s.includes(' hat giong '))return'giong';
-  if(['phan','ure','urea','dap','npk','kali','kcl','lan','dam','sa','dyt','humic'].some(hasW)
-    ||s.includes(' huu co ')||s.includes(' vi luong ')||s.includes(' trung luong '))return'phan';
+  // 1. Ghi rõ là thuốc → thuốc luôn (tránh "thuốc cỏ lúa" bị nhận nhầm thành giống)
+  if(hasW('thuoc')||hasW('bvtv')||s.includes(' tru sau')||s.includes(' tru co')||s.includes(' tru oc')||s.includes(' diet '))return'thuoc';
+  // 2. Ghi rõ là "phân" → phân luôn (tránh "Phân bón cho lúa" bị chữ lúa kéo sang giống)
+  if(hasW('phan'))return'phan';
+  // 3. Giống cây trồng: từ "giống", mã giống lúa (OM 5451, ST25, IR504...), tên cây rau màu
+  if(s.includes('giong')
+    ||/(^|\s)(om|st|ir)\s?\d/.test(s)
+    ||s.includes(' kho qua ')||s.includes(' ca chua ')||s.includes(' xa lach ')
+    ||(['lua','nep','bap','ngo','cai','dua','bau','muop','ot','rau','hanh'].some(hasW)
+       &&!s.includes('cai tao')&&!s.includes('dau trau')&&!s.includes('chao lua')))return'giong';
+  // 4. Phân bón: từ khóa + công thức NPK (16-16-8, 15-30-15...) + thương hiệu phân quen thuộc
+  if(['phan','ure','urea','dap','npk','kali','kcl','lan','dam','sa','dyt','humic','te'].some(hasW)
+    ||s.includes(' huu co ')||s.includes(' vi luong ')||s.includes(' trung luong ')
+    ||/\d{1,3}\s?-\s?\d{1,3}\s?-\s?\d{1,3}/.test(s)
+    ||['dau trau','phu my','ca mau','lam thao','van dien','binh dien','song gianh','que lam','viet nhat','ba la xanh'].some(b=>s.includes(b)))return'phan';
   return'thuoc';
 }
 // Chia danh sách thành 3 nhóm, mỗi nhóm sắp A-Z tiếng Việt
