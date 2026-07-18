@@ -468,6 +468,7 @@ tr:hover td{background:var(--g50);}
       <div class="sidebar-section">Khách hàng</div>
       <div class="sidebar-item" onclick="showAdminPage('customers')"><span class="s-icon">👥</span>Khách hàng</div>
       <div class="sidebar-item" onclick="showAdminPage('debt')"><span class="s-icon">💳</span>Công nợ</div>
+      <div class="sidebar-item" onclick="showAdminPage('supplierdebts')"><span class="s-icon">💳</span>Nợ NCC</div>
       <div class="sidebar-section">Báo cáo</div>
       <div class="sidebar-item" onclick="showAdminPage('dashboard')"><span class="s-icon">📊</span>Tổng quan</div>
       <div class="sidebar-section">Cài đặt</div>
@@ -1113,7 +1114,7 @@ function showAdminPage(page){
   // close sidebar on mobile
   if(window.innerWidth<768)document.getElementById('admin-sidebar').classList.remove('open');
   const c=document.getElementById('admin-content');
-  ({pos:renderAdminPOS,dashboard:renderAdminDash,products:renderAdminProducts,inventory:renderAdminInventory,batchimport:renderBatchImport,customers:renderAdminCustomers,debt:renderAdminDebt,invoices:renderAdminInvoices,dailysales:renderAdminDailySales,settings:renderAdminSettings}[page]||renderAdminDash)(c);
+  ({pos:renderAdminPOS,dashboard:renderAdminDash,products:renderAdminProducts,inventory:renderAdminInventory,batchimport:renderBatchImport,customers:renderAdminCustomers,debt:renderAdminDebt,supplierdebts:renderAdminSupplierDebts,invoices:renderAdminInvoices,dailysales:renderAdminDailySales,settings:renderAdminSettings}[page]||renderAdminDash)(c);
 }
 function toggleSidebar(){document.getElementById('admin-sidebar').classList.toggle('open');}
 
@@ -1567,8 +1568,8 @@ function renderAdminInventory(c){
     <div class="card mb-16">
       <div class="card-header">📋 Lịch sử nhập kho</div>
       <div class="tbl-wrap"><table>
-        <thead><tr><th>Mã phiếu</th><th>Ngày</th><th>NCC</th><th>Sản phẩm</th><th>Tổng tiền</th></tr></thead>
-        <tbody>${DB.stockImports.map(i=>`<tr><td><code>${i.id}</code></td><td>${fmtD(i.date)}</td><td>${i.supplier}</td><td>${i.items.map(x=>`${x.name}(${x.qty})`).join(', ')}</td><td><strong>${fmt(i.total)}</strong></td></tr>`).join('')||'<tr><td colspan="5" class="text-center text-muted" style="padding:24px">Chưa có phiếu nhập</td></tr>'}
+        <thead><tr><th>Mã phiếu</th><th>Ngày</th><th>NCC</th><th>Sản phẩm</th><th>Tổng tiền</th><th>Thanh toán</th></tr></thead>
+        <tbody>${DB.stockImports.map(i=>`<tr><td><code>${i.id}</code></td><td>${fmtD(i.date)}</td><td>${i.supplier}</td><td>${i.items.map(x=>`${x.name}(${x.qty})`).join(', ')}</td><td><strong>${fmt(i.total)}</strong></td><td>${impDebt(i)>0?`<span class="badge badge-amber">Còn nợ ${fmt(impDebt(i))}</span>`:'<span class="badge badge-green">Đã TT</span>'}</td></tr>`).join('')||'<tr><td colspan="6" class="text-center text-muted" style="padding:24px">Chưa có phiếu nhập</td></tr>'}
         </tbody>
       </table></div>
     </div>
@@ -1664,7 +1665,7 @@ function saveImport(){
   if(!valid.length){toast('Thêm ít nhất 1 SP!','error');return;}
   const total=valid.reduce((s,i)=>s+i.qty*i.cost,0);
   const imp={id:'NK'+Date.now().toString().slice(-6),date,supplier:sup,
-    items:valid.map(i=>{const p=DB.products.find(x=>x.id===i.productId);return{productId:i.productId,name:p?.name||'',qty:i.qty,cost:i.cost};}),total};
+    items:valid.map(i=>{const p=DB.products.find(x=>x.id===i.productId);return{productId:i.productId,name:p?.name||'',qty:i.qty,cost:i.cost};}),total,paid:0,debt:total};
   DB.stockImports.unshift(imp);
   valid.forEach(item=>{const p=DB.products.find(x=>x.id===item.productId);if(p){p.stock+=item.qty;p.cost=item.cost;}});
   saveDB();closeModal();toast(`Nhập kho thành công! ${fmt(total)}`);
@@ -1791,11 +1792,121 @@ function runBatchImport(){
     date:data.date||today(),
     supplier:data.supplier||'',
     note:data.note||'',
-    items:impItems,total:grand
+    items:impItems,total:grand,paid:0,debt:grand
   });
   saveDB();
   toast(`Đã nhập: ${cntNew} món mới, ${cntDup} món cộng kho`);
   renderBatchImport(document.getElementById('admin-content'));
+}
+
+/* ---- SUPPLIER DEBTS (Công nợ nhà cung cấp) ---- */
+// Phiếu nhập cũ chưa có paid/debt: mặc định coi như paid=0, debt=total (không tự ghi đè vào DB)
+function impPaid(i){return i.paid||0;}
+function impDebt(i){return (i.debt===undefined||i.debt===null)?Math.max(0,(i.total||0)-impPaid(i)):i.debt;}
+function supKey(i){return ((i.supplier||'').trim())||'(Không rõ)';}
+
+function supplierDebtGroups(){
+  const map={};
+  (DB.stockImports||[]).forEach(i=>{
+    const sup=supKey(i);
+    if(!map[sup])map[sup]={supplier:sup,total:0,paid:0,debt:0,count:0};
+    map[sup].total+=i.total||0;
+    map[sup].paid+=impPaid(i);
+    map[sup].debt+=impDebt(i);
+    map[sup].count++;
+  });
+  return Object.values(map).sort((a,b)=>b.debt-a.debt);
+}
+
+function renderAdminSupplierDebts(c){
+  const groups=supplierDebtGroups();
+  const totalDebt=groups.reduce((s,g)=>s+g.debt,0);
+  const unpaidCount=groups.filter(g=>g.debt>0).length;
+  const unpaidImports=(DB.stockImports||[]).filter(i=>impDebt(i)>0);
+  c.innerHTML=`
+  <div class="admin-page-header"><span>💳</span><h1>Nợ nhà cung cấp</h1></div>
+  <div class="page-body-scroll">
+    <div class="stat-grid" style="grid-template-columns:repeat(3,1fr);margin-bottom:16px">
+      <div class="stat-card"><div class="s-label">Nhà cung cấp</div><div class="s-val">${groups.length}</div></div>
+      <div class="stat-card"><div class="s-label">Tổng nợ</div><div class="s-val text-red" style="font-size:16px">${fmt(totalDebt)}</div></div>
+      <div class="stat-card"><div class="s-label">Chưa trả</div><div class="s-val" style="color:var(--amber)">${unpaidCount} NCC</div></div>
+    </div>
+    <div class="card mb-16">
+      <div class="card-header">💳 Công nợ theo nhà cung cấp</div>
+      <div class="tbl-wrap"><table>
+        <thead><tr><th>NCC</th><th>Tổng nhập</th><th>Đã trả</th><th>Còn nợ</th><th></th></tr></thead>
+        <tbody>${groups.map(g=>{
+          const supEsc=g.supplier.replace(/\\/g,'\\\\').replace(/'/g,"\\'").replace(/"/g,'&quot;');
+          return `<tr>
+          <td><strong>${g.supplier}</strong><div class="text-xs text-muted">${g.count} phiếu nhập</div></td>
+          <td class="font-bold">${fmt(g.total)}</td>
+          <td class="text-green">${fmt(g.paid)}</td>
+          <td class="${g.debt>0?'text-red font-bold':''}">${g.debt>0?fmt(g.debt):'—'}</td>
+          <td>${g.debt>0?`<button class="btn btn-green btn-sm" onclick="showPaySupplierDebt('${supEsc}')">💰 Thu nợ</button>`:'<span class="badge badge-green">✅ Hết nợ</span>'}</td>
+        </tr>`;}).join('')||'<tr><td colspan="5" class="text-center text-muted" style="padding:24px">Chưa có phiếu nhập nào</td></tr>'}
+        </tbody>
+      </table></div>
+    </div>
+    <div class="card">
+      <div class="card-header">📋 Phiếu nhập chưa trả hết (${unpaidImports.length})</div>
+      <div class="tbl-wrap"><table>
+        <thead><tr><th>Mã phiếu</th><th>Ngày</th><th>NCC</th><th>Tổng tiền</th><th>Đã trả</th><th>Còn nợ</th></tr></thead>
+        <tbody>${unpaidImports.map(i=>`<tr>
+          <td><code>${i.id}</code></td><td>${fmtD(i.date)}</td><td>${i.supplier}</td>
+          <td class="font-bold">${fmt(i.total)}</td>
+          <td class="text-green">${fmt(impPaid(i))}</td>
+          <td class="text-red font-bold">${fmt(impDebt(i))}</td>
+        </tr>`).join('')||'<tr><td colspan="6" class="text-center text-muted" style="padding:24px">Không có phiếu nào còn nợ 🎉</td></tr>'}
+        </tbody>
+      </table></div>
+    </div>
+  </div>`;
+}
+
+function showPaySupplierDebt(supplier){
+  const g=supplierDebtGroups().find(x=>x.supplier===supplier);
+  if(!g||g.debt<=0){toast('NCC này không còn nợ!','warning');return;}
+  const supEsc=supplier.replace(/\\/g,'\\\\').replace(/'/g,"\\'").replace(/"/g,'&quot;');
+  showModal(`<div class="modal">
+    <div class="modal-header"><span>💰</span><h2>Thu nợ - ${supplier}</h2><button class="btn btn-ghost btn-icon" onclick="closeModal()">✕</button></div>
+    <div class="modal-body">
+      <div class="alert alert-warn mb-12">Đang nợ: <strong>${fmt(g.debt)}</strong></div>
+      <div class="form-group"><label>Số tiền trả *</label>
+        <input class="form-control" type="text" inputmode="numeric" id="pay-sup-amount" placeholder="Nhập số tiền..." oninput="filterNumInput(this,false)"/>
+      </div>
+      <button class="btn btn-outline btn-sm" onclick="document.getElementById('pay-sup-amount').value=${g.debt}">Trả hết ${fmt(g.debt)}</button>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-outline" onclick="closeModal()">Hủy</button>
+      <button class="btn btn-green" onclick="processPaySupplierDebt('${supEsc}')">✅ Xác nhận</button>
+    </div>
+  </div>`);
+  document.getElementById('pay-sup-amount')?.focus();
+}
+
+function processPaySupplierDebt(supplier){
+  const amount=+(document.getElementById('pay-sup-amount')?.value||0);
+  const g=supplierDebtGroups().find(x=>x.supplier===supplier);
+  if(!g){toast('Không tìm thấy NCC!','error');return;}
+  if(amount<=0){toast('Nhập số tiền trả!','error');return;}
+  if(amount>g.debt){toast(`Số tiền vượt quá nợ hiện tại (${fmt(g.debt)})!`,'error');return;}
+  // Trừ nợ vào các phiếu nhập cũ nhất trước
+  const imps=(DB.stockImports||[]).filter(i=>supKey(i)===supplier)
+    .sort((a,b)=>(a.date||'').localeCompare(b.date||''));
+  let remaining=amount;
+  for(const imp of imps){
+    const debt=impDebt(imp);
+    if(debt<=0)continue;
+    const pay=Math.min(remaining,debt);
+    imp.paid=impPaid(imp)+pay;
+    imp.debt=debt-pay;
+    remaining-=pay;
+    if(remaining<=0)break;
+  }
+  saveDB();
+  closeModal();
+  toast(`Đã trả ${fmt(amount)} cho ${supplier}!`);
+  renderAdminSupplierDebts(document.getElementById('admin-content'));
 }
 
 /* ---- CUSTOMERS ---- */
