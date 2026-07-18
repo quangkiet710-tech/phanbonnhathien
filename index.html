@@ -1896,7 +1896,7 @@ function renderAdminSupplierDebts(c){
           <td class="font-bold">${fmt(g.total)}</td>
           <td class="text-green">${fmt(g.paid)}</td>
           <td class="${g.debt>0?'text-red font-bold':''}">${g.debt>0?fmt(g.debt):'—'}</td>
-          <td><div style="display:flex;gap:4px;align-items:center">${g.debt>0?`<button class="btn btn-green btn-sm" onclick="showPaySupplierDebt('${supEsc}')">💰 Thu nợ</button>`:'<span class="badge badge-green">✅ Hết nợ</span>'}<button class="btn btn-outline btn-sm" onclick="showEditSupplierPaid('${supEsc}')">✏️</button></div></td>
+          <td><div style="display:flex;gap:4px;align-items:center">${g.debt>0?`<button class="btn btn-green btn-sm" onclick="showPaySupplierDebt('${supEsc}')">💰 Thu nợ</button>`:'<span class="badge badge-green">✅ Hết nợ</span>'}<button class="btn btn-outline btn-sm" onclick="showEditSupplierPaid('${supEsc}')">✏️</button><button class="btn btn-red btn-sm" onclick="deleteSupplier('${supEsc}')">🗑</button></div></td>
         </tr>`;}).join('')||'<tr><td colspan="5" class="text-center text-muted" style="padding:24px">Chưa có phiếu nhập nào</td></tr>'}
         </tbody>
       </table></div>
@@ -1971,6 +1971,9 @@ function showEditSupplierPaid(supplier){
     <div class="modal-header"><span>✏️</span><h2>Sửa công nợ - ${supplier}</h2><button class="btn btn-ghost btn-icon" onclick="closeModal()">✕</button></div>
     <div class="modal-body">
       <div class="alert alert-warn mb-12">Tổng nhập: <strong>${fmt(g.total)}</strong> &nbsp;|&nbsp; Đã trả: <strong>${fmt(g.paid)}</strong> &nbsp;|&nbsp; Còn nợ: <strong>${fmt(g.debt)}</strong></div>
+      <div class="form-group"><label>Tên nhà cung cấp *</label>
+        <input class="form-control" id="esp-name" value="${supplier.replace(/"/g,'&quot;')}"/>
+      </div>
       <div class="form-group"><label>Số tiền đã thanh toán *</label>
         <input class="form-control" type="text" inputmode="numeric" id="esp-paid" value="${g.paid}" oninput="filterNumInput(this,false);espCalcDebt(${g.total})"/>
       </div>
@@ -1993,8 +1996,15 @@ function espCalcDebt(total){
 function processEditSupplierPaid(supplier){
   const g=supplierDebtGroups().find(x=>x.supplier===supplier);
   if(!g){toast('Không tìm thấy NCC!','error');return;}
+  const newName=(document.getElementById('esp-name')?.value||'').trim();
   const paid=+(document.getElementById('esp-paid')?.value||0);
+  if(!newName){toast('Nhập tên nhà cung cấp!','error');return;}
   if(paid>g.total){toast(`Không được vượt tổng nhập (${fmt(g.total)})!`,'error');return;}
+  // Nếu đổi tên trùng với NCC khác đang có → hỏi trước khi gộp chung công nợ
+  if(newName!==supplier){
+    const clash=(DB.stockImports||[]).some(i=>supKey(i)!==supplier&&supKey(i)===newName);
+    if(clash&&!confirm(`NCC "${newName}" đã tồn tại. Gộp chung công nợ hai NCC này?`))return;
+  }
   // Phân bổ lại toàn bộ số đã trả vào các phiếu nhập: phiếu cũ nhất trước
   const imps=(DB.stockImports||[]).filter(i=>supKey(i)===supplier)
     .sort((a,b)=>(a.date||'').localeCompare(b.date||''));
@@ -2005,8 +2015,21 @@ function processEditSupplierPaid(supplier){
     imp.debt=(imp.total||0)-pay;
     remaining-=pay;
   });
+  if(newName!==supplier)imps.forEach(imp=>{imp.supplier=newName;});
   saveDB();closeModal();
-  toast(`Đã cập nhật: đã trả ${fmt(paid)}, còn nợ ${fmt(Math.max(0,g.total-paid))}`);
+  toast(`Đã cập nhật${newName!==supplier?` (đổi tên thành "${newName}")`:''}: đã trả ${fmt(paid)}, còn nợ ${fmt(Math.max(0,g.total-paid))}`);
+  renderAdminSupplierDebts(document.getElementById('admin-content'));
+}
+
+function deleteSupplier(supplier){
+  const imps=(DB.stockImports||[]).filter(i=>supKey(i)===supplier);
+  if(!imps.length){toast('Không tìm thấy NCC!','error');return;}
+  const total=imps.reduce((s,i)=>s+(i.total||0),0);
+  const debt=imps.reduce((s,i)=>s+impDebt(i),0);
+  if(!confirm(`Xóa NCC "${supplier}"?\n\n- Sẽ xóa ${imps.length} phiếu nhập (tổng ${fmt(total)}${debt>0?', đang còn nợ '+fmt(debt):''}) khỏi lịch sử.\n- Tồn kho sản phẩm KHÔNG thay đổi.\n\nHành động này không thể hoàn tác!`))return;
+  DB.stockImports=(DB.stockImports||[]).filter(i=>supKey(i)!==supplier);
+  saveDB();
+  toast(`Đã xóa NCC "${supplier}" (${imps.length} phiếu nhập)`,'warning');
   renderAdminSupplierDebts(document.getElementById('admin-content'));
 }
 
