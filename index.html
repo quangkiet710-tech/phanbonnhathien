@@ -1571,8 +1571,8 @@ function renderAdminInventory(c){
     <div class="card mb-16">
       <div class="card-header">📋 Lịch sử nhập kho</div>
       <div class="tbl-wrap"><table>
-        <thead><tr><th>Mã phiếu</th><th>Ngày</th><th>NCC</th><th>Sản phẩm</th><th>Tổng tiền</th><th>Thanh toán</th></tr></thead>
-        <tbody>${DB.stockImports.map(i=>`<tr><td><code>${i.id}</code></td><td>${fmtD(i.date)}</td><td>${i.supplier}</td><td>${i.items.map(x=>`${x.name}(${x.qty})`).join(', ')}</td><td><strong>${fmt(i.total)}</strong></td><td>${impDebt(i)>0?`<span class="badge badge-amber">Còn nợ ${fmt(impDebt(i))}</span>`:'<span class="badge badge-green">Đã TT</span>'}</td></tr>`).join('')||'<tr><td colspan="6" class="text-center text-muted" style="padding:24px">Chưa có phiếu nhập</td></tr>'}
+        <thead><tr><th>Mã phiếu</th><th>Ngày</th><th>NCC</th><th>Sản phẩm</th><th>Tổng tiền</th><th>Thanh toán</th><th></th></tr></thead>
+        <tbody>${DB.stockImports.map(i=>`<tr><td><code>${i.id}</code></td><td>${fmtD(i.date)}</td><td>${i.supplier}</td><td>${i.items.map(x=>`${x.name}(${x.qty})`).join(', ')}</td><td><strong>${fmt(i.total)}</strong></td><td>${impDebt(i)>0?`<span class="badge badge-amber">Còn nợ ${fmt(impDebt(i))}</span>`:'<span class="badge badge-green">Đã TT</span>'}</td><td><button class="btn btn-outline btn-sm" onclick="showEditImport('${i.id}')">✏️</button></td></tr>`).join('')||'<tr><td colspan="7" class="text-center text-muted" style="padding:24px">Chưa có phiếu nhập</td></tr>'}
         </tbody>
       </table></div>
     </div>
@@ -1673,6 +1673,54 @@ function saveImport(){
   addPriceHistory('cost',imp.items.map(x=>({productId:x.productId,name:x.name,price:x.cost,qty:x.qty})),date,imp.id,'stockImport');
   valid.forEach(item=>{const p=DB.products.find(x=>x.id===item.productId);if(p){p.stock+=item.qty;p.cost=item.cost;}});
   saveDB();closeModal();toast(`Nhập kho thành công! ${fmt(total)}`);
+  renderAdminInventory(document.getElementById('admin-content'));
+}
+
+/* ---- EDIT IMPORT (Sửa phiếu nhập) ---- */
+function showEditImport(id){
+  const imp=DB.stockImports.find(x=>x.id===id);if(!imp)return;
+  showModal(`<div class="modal">
+    <div class="modal-header"><span>✏️</span><h2>Sửa phiếu nhập ${imp.id}</h2><button class="btn btn-ghost btn-icon" onclick="closeModal()">✕</button></div>
+    <div class="modal-body">
+      <div class="grid-2">
+        <div class="form-group"><label>Nhà cung cấp *</label><input class="form-control" id="ei-sup" value="${(imp.supplier||'').replace(/"/g,'&quot;')}"/></div>
+        <div class="form-group"><label>Số HĐ / Ghi chú</label><input class="form-control" id="ei-note" value="${(imp.note||'').replace(/"/g,'&quot;')}"/></div>
+      </div>
+      <div class="grid-2">
+        <div class="form-group"><label>Ngày nhập</label><input class="form-control" type="date" id="ei-date" value="${imp.date||today()}"/></div>
+        <div class="form-group"><label>Tổng tiền</label><input class="form-control" type="text" inputmode="numeric" id="ei-total" value="${imp.total||0}" oninput="filterNumInput(this,false);eiCalcDebt()"/></div>
+      </div>
+      <div class="grid-2">
+        <div class="form-group"><label>Đã trả</label><input class="form-control" type="text" inputmode="numeric" id="ei-paid" value="${impPaid(imp)}" oninput="filterNumInput(this,false);eiCalcDebt()"/></div>
+        <div class="form-group"><label>Còn nợ (tự tính)</label><div id="ei-debt" style="padding:9px 0;font-weight:800;font-size:15px;color:var(--red)"></div></div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-outline" onclick="closeModal()">Hủy</button>
+      <button class="btn btn-green" onclick="saveEditImport('${imp.id}')">💾 Lưu</button>
+    </div>
+  </div>`);
+  eiCalcDebt();
+}
+function eiCalcDebt(){
+  const total=+(document.getElementById('ei-total')?.value||0);
+  const paid=+(document.getElementById('ei-paid')?.value||0);
+  const el=document.getElementById('ei-debt');
+  if(el)el.textContent=fmt(Math.max(0,total-paid));
+}
+function saveEditImport(id){
+  const imp=DB.stockImports.find(x=>x.id===id);if(!imp)return;
+  const sup=document.getElementById('ei-sup')?.value.trim();
+  const note=document.getElementById('ei-note')?.value.trim()||'';
+  const date=document.getElementById('ei-date')?.value;
+  const total=+(document.getElementById('ei-total')?.value||0);
+  const paid=+(document.getElementById('ei-paid')?.value||0);
+  if(!sup){toast('Nhập tên NCC!','error');return;}
+  if(!date){toast('Chọn ngày nhập!','error');return;}
+  if(paid>total){toast('Đã trả không được vượt tổng tiền!','error');return;}
+  imp.supplier=sup;imp.note=note;imp.date=date;
+  imp.total=total;imp.paid=paid;imp.debt=total-paid;
+  saveDB();closeModal();toast('Đã cập nhật phiếu nhập!');
   renderAdminInventory(document.getElementById('admin-content'));
 }
 
@@ -1848,7 +1896,7 @@ function renderAdminSupplierDebts(c){
           <td class="font-bold">${fmt(g.total)}</td>
           <td class="text-green">${fmt(g.paid)}</td>
           <td class="${g.debt>0?'text-red font-bold':''}">${g.debt>0?fmt(g.debt):'—'}</td>
-          <td>${g.debt>0?`<button class="btn btn-green btn-sm" onclick="showPaySupplierDebt('${supEsc}')">💰 Thu nợ</button>`:'<span class="badge badge-green">✅ Hết nợ</span>'}</td>
+          <td><div style="display:flex;gap:4px;align-items:center">${g.debt>0?`<button class="btn btn-green btn-sm" onclick="showPaySupplierDebt('${supEsc}')">💰 Thu nợ</button>`:'<span class="badge badge-green">✅ Hết nợ</span>'}<button class="btn btn-outline btn-sm" onclick="showEditSupplierPaid('${supEsc}')">✏️</button></div></td>
         </tr>`;}).join('')||'<tr><td colspan="5" class="text-center text-muted" style="padding:24px">Chưa có phiếu nhập nào</td></tr>'}
         </tbody>
       </table></div>
@@ -1912,6 +1960,53 @@ function processPaySupplierDebt(supplier){
   saveDB();
   closeModal();
   toast(`Đã trả ${fmt(amount)} cho ${supplier}!`);
+  renderAdminSupplierDebts(document.getElementById('admin-content'));
+}
+
+function showEditSupplierPaid(supplier){
+  const g=supplierDebtGroups().find(x=>x.supplier===supplier);
+  if(!g)return;
+  const supEsc=supplier.replace(/\\/g,'\\\\').replace(/'/g,"\\'").replace(/"/g,'&quot;');
+  showModal(`<div class="modal">
+    <div class="modal-header"><span>✏️</span><h2>Sửa công nợ - ${supplier}</h2><button class="btn btn-ghost btn-icon" onclick="closeModal()">✕</button></div>
+    <div class="modal-body">
+      <div class="alert alert-warn mb-12">Tổng nhập: <strong>${fmt(g.total)}</strong> &nbsp;|&nbsp; Đã trả: <strong>${fmt(g.paid)}</strong> &nbsp;|&nbsp; Còn nợ: <strong>${fmt(g.debt)}</strong></div>
+      <div class="form-group"><label>Số tiền đã thanh toán *</label>
+        <input class="form-control" type="text" inputmode="numeric" id="esp-paid" value="${g.paid}" oninput="filterNumInput(this,false);espCalcDebt(${g.total})"/>
+      </div>
+      <div style="font-size:14px;margin-bottom:10px">Còn nợ mới: <strong id="esp-debt" style="color:var(--red)"></strong></div>
+      <div class="text-xs text-muted">Số tiền sẽ được phân bổ lại vào tất cả phiếu nhập của NCC này (phiếu cũ nhất trước).</div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-outline" onclick="closeModal()">Hủy</button>
+      <button class="btn btn-green" onclick="processEditSupplierPaid('${supEsc}')">✅ Xác nhận</button>
+    </div>
+  </div>`);
+  espCalcDebt(g.total);
+  document.getElementById('esp-paid')?.focus();
+}
+function espCalcDebt(total){
+  const paid=+(document.getElementById('esp-paid')?.value||0);
+  const el=document.getElementById('esp-debt');
+  if(el)el.textContent=fmt(Math.max(0,total-paid));
+}
+function processEditSupplierPaid(supplier){
+  const g=supplierDebtGroups().find(x=>x.supplier===supplier);
+  if(!g){toast('Không tìm thấy NCC!','error');return;}
+  const paid=+(document.getElementById('esp-paid')?.value||0);
+  if(paid>g.total){toast(`Không được vượt tổng nhập (${fmt(g.total)})!`,'error');return;}
+  // Phân bổ lại toàn bộ số đã trả vào các phiếu nhập: phiếu cũ nhất trước
+  const imps=(DB.stockImports||[]).filter(i=>supKey(i)===supplier)
+    .sort((a,b)=>(a.date||'').localeCompare(b.date||''));
+  let remaining=paid;
+  imps.forEach(imp=>{
+    const pay=Math.min(remaining,imp.total||0);
+    imp.paid=pay;
+    imp.debt=(imp.total||0)-pay;
+    remaining-=pay;
+  });
+  saveDB();closeModal();
+  toast(`Đã cập nhật: đã trả ${fmt(paid)}, còn nợ ${fmt(Math.max(0,g.total-paid))}`);
   renderAdminSupplierDebts(document.getElementById('admin-content'));
 }
 
