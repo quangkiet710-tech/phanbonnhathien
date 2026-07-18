@@ -1559,6 +1559,10 @@ function saveNewProduct(){
 function showEditProduct(id){
   const p=DB.products.find(x=>x.id===id);if(!p)return;
   window._editUnits=JSON.parse(JSON.stringify(p.units));
+  // Lịch sử nhập của sản phẩm này (mới nhất trước) — chỉ xem
+  const impHist=(DB.stockImports||[])
+    .flatMap(imp=>(imp.items||[]).filter(it=>it.productId===id).map(it=>({date:imp.date,supplier:imp.supplier,cost:it.cost,qty:it.qty})))
+    .sort((a,b)=>(b.date||'').localeCompare(a.date||''));
   showModal(`<div class="modal modal-lg">
     <div class="modal-header"><span>${p.icon}</span><h2>Sửa: ${p.name}</h2><button class="btn btn-ghost btn-icon" onclick="closeModal()">✕</button></div>
     <div class="modal-body">
@@ -1581,6 +1585,12 @@ function showEditProduct(id){
       <div style="margin-top:16px;font-weight:700;font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.4px">Đơn vị bán</div>
       <div id="edit-units-container" style="margin-top:8px"></div>
       <button class="btn btn-outline btn-sm mt-8" onclick="addEditUnitRow()">+ Thêm đơn vị</button>
+      <div style="margin-top:16px;font-weight:700;font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.4px">Lịch sử nhập</div>
+      <div class="tbl-wrap" style="margin-top:8px;max-height:180px;overflow-y:auto"><table>
+        <thead><tr><th>Ngày</th><th>NCC</th><th>Giá nhập</th><th>Số lượng</th></tr></thead>
+        <tbody>${impHist.map(h=>`<tr><td>${fmtD(h.date)}</td><td>${h.supplier||'—'}</td><td>${fmt(h.cost)}</td><td>${h.qty}</td></tr>`).join('')||'<tr><td colspan="4" class="text-center text-muted" style="padding:16px">Chưa có lịch sử nhập</td></tr>'}
+        </tbody>
+      </table></div>
     </div>
     <div class="modal-footer">
       <button class="btn btn-outline" onclick="closeModal()">Hủy</button>
