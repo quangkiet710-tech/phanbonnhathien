@@ -794,7 +794,7 @@ function renderCustHome(c){
 function prodCardHTML(p){
   const baseUnit=p.units&&p.units[0]?p.units[0]:{name:'Cái',price:p.price};
   return `<div class="prod-card" onclick="showProdDetail('${p.id}')">
-    <div class="prod-card-img">${p.icon}</div>
+    <div class="prod-card-img">${p.image?`<img src="${p.image}" style="width:100%;height:100%;object-fit:cover;border-radius:8px 8px 0 0"/>`:p.icon}</div>
     <div class="prod-card-body">
       <div class="prod-card-name">${p.name}</div>
       <div class="prod-card-price">${fmt(baseUnit.price)}</div>
@@ -862,7 +862,7 @@ function showProdDetail(id){
       <button class="btn btn-ghost btn-icon" onclick="closeModal()">✕</button>
     </div>
     <div class="modal-body">
-      <div style="text-align:center;font-size:72px;padding:16px;background:var(--g50);border-radius:var(--radius);margin-bottom:16px">${p.icon}</div>
+      <div style="text-align:center;font-size:72px;padding:16px;background:var(--g50);border-radius:var(--radius);margin-bottom:16px">${p.image?`<img src="${p.image}" style="width:120px;height:120px;object-fit:cover;border-radius:8px"/>`:p.icon}</div>
       <div style="margin-bottom:6px"><span class="badge badge-green">${p.cat}</span> <span class="badge badge-gray">Kho: ${p.stock}</span></div>
       <div style="font-weight:800;font-size:15px;margin-bottom:12px">${p.name}</div>
 
@@ -1473,7 +1473,7 @@ function renderAdminProductsTable(){
   const row=p=>{idx++;return `
     <tr>
       <td>${idx}</td>
-      <td><div style="font-weight:700">${p.icon} ${p.name}</div><div class="text-xs text-muted">${p.sku} | ${p.cat}</div></td>
+      <td><div style="font-weight:700;display:flex;align-items:center;gap:6px">${p.image?`<img src="${p.image}" style="width:30px;height:30px;object-fit:cover;border-radius:8px;flex-shrink:0"/>`:p.icon}<span>${p.name}</span></div><div class="text-xs text-muted">${p.sku} | ${p.cat}</div></td>
       <td>${p.units.map(u=>`<span class="badge badge-gray" style="margin:1px">${u.name}: ${fmt(u.price)}</span>`).join('')}</td>
       <td class="${p.stock<=p.minStock?'text-red font-bold':'text-green'}">${p.stock} ${p.stock<=p.minStock?'⚠️':''}</td>
       <td>${fmt(p.cost)}</td>
@@ -1493,7 +1493,50 @@ function renderAdminProductsTable(){
     </tbody></table>`;
 }
 
+/* ---- PRODUCT IMAGE (Ảnh sản phẩm - Base64) ---- */
+// Đọc file ảnh, thu nhỏ tối đa 300px và nén JPEG để không phình localStorage/Supabase
+function readProductImage(file,cb){
+  if(!file)return;
+  if(!file.type||file.type.indexOf('image/')!==0){toast('File không phải ảnh!','error');return;}
+  const r=new FileReader();
+  r.onload=e=>{
+    const img=new Image();
+    img.onload=()=>{
+      const MAX=300;
+      let w=img.width,h=img.height;
+      if(w>=h&&w>MAX){h=Math.round(h*MAX/w);w=MAX;}
+      else if(h>w&&h>MAX){w=Math.round(w*MAX/h);h=MAX;}
+      const cv=document.createElement('canvas');cv.width=w;cv.height=h;
+      const ctx=cv.getContext('2d');
+      ctx.fillStyle='#fff';ctx.fillRect(0,0,w,h); // nền trắng cho ảnh PNG trong suốt
+      ctx.drawImage(img,0,0,w,h);
+      cb(cv.toDataURL('image/jpeg',0.82));
+    };
+    img.onerror=()=>toast('Không đọc được ảnh!','error');
+    img.src=e.target.result;
+  };
+  r.readAsDataURL(file);
+}
+function onProdImagePick(inp){
+  readProductImage(inp.files&&inp.files[0],d=>{window._prodImage=d;renderProdImagePreview();});
+}
+function renderProdImagePreview(){
+  const el=document.getElementById('prod-img-preview');if(!el)return;
+  el.innerHTML=window._prodImage
+    ?`<img src="${window._prodImage}" style="width:120px;height:120px;object-fit:cover;border-radius:8px;border:1.5px solid var(--border)"/>
+      <button class="btn btn-outline btn-sm" style="margin-left:8px" onclick="window._prodImage='';renderProdImagePreview()">✕ Xóa ảnh</button>`
+    :'<span class="text-muted text-xs">Chưa có ảnh — sẽ hiển thị icon</span>';
+}
+// HTML khối upload ảnh dùng chung cho modal thêm & sửa sản phẩm
+function prodImageInputHTML(){
+  return `<div class="form-group mt-12"><label>Ảnh sản phẩm (không bắt buộc)</label>
+    <input class="form-control" type="file" accept="image/*" onchange="onProdImagePick(this)"/>
+    <div id="prod-img-preview" style="margin-top:8px;display:flex;align-items:center"></div>
+  </div>`;
+}
+
 function showAddProduct(){
+  window._prodImage='';
   showModal(`<div class="modal modal-lg">
     <div class="modal-header"><span>📦</span><h2>Thêm sản phẩm</h2><button class="btn btn-ghost btn-icon" onclick="closeModal()">✕</button></div>
     <div class="modal-body">
@@ -1513,6 +1556,7 @@ function showAddProduct(){
         <div class="form-group"><label>Tồn kho</label><input class="form-control" type="text" inputmode="numeric" id="np-stock" placeholder="0" oninput="filterNumInput(this,false)"/></div>
         <div class="form-group"><label>Tồn tối thiểu</label><input class="form-control" type="text" inputmode="numeric" id="np-min" placeholder="10" oninput="filterNumInput(this,false)"/></div>
       </div>
+      ${prodImageInputHTML()}
       <div style="margin-top:16px;font-weight:700;font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.4px">Đơn vị bán (thêm nhiều loại)</div>
       <div id="units-container" style="margin-top:8px"></div>
       <button class="btn btn-outline btn-sm mt-8" onclick="addUnitRow()">+ Thêm đơn vị</button>
@@ -1524,6 +1568,7 @@ function showAddProduct(){
   </div>`);
   window._newUnits=[{name:'Bao 50kg',ratio:1,price:0}];
   renderUnitRows();
+  renderProdImagePreview();
 }
 
 function addUnitRow(){window._newUnits.push({name:'',ratio:1,price:0});renderUnitRows();}
@@ -1550,7 +1595,8 @@ function saveNewProduct(){
     stock:+document.getElementById('np-stock').value||0,
     minStock:+document.getElementById('np-min').value||10,
     price:window._newUnits[0]?.price||0,
-    units:window._newUnits.filter(u=>u.name)
+    units:window._newUnits.filter(u=>u.name),
+    image:window._prodImage||''
   });
   saveDB();closeModal();toast('Đã thêm sản phẩm!');
   renderAdminProducts(document.getElementById('admin-content'));
@@ -1559,6 +1605,7 @@ function saveNewProduct(){
 function showEditProduct(id){
   const p=DB.products.find(x=>x.id===id);if(!p)return;
   window._editUnits=JSON.parse(JSON.stringify(p.units));
+  window._prodImage=p.image||'';
   // Lịch sử nhập của sản phẩm này (mới nhất trước) — chỉ xem
   const impHist=(DB.stockImports||[])
     .flatMap(imp=>(imp.items||[]).filter(it=>it.productId===id).map(it=>({date:imp.date,supplier:imp.supplier,cost:it.cost,qty:it.qty})))
@@ -1582,6 +1629,7 @@ function showEditProduct(id){
         <div class="form-group"><label>Tồn kho</label><input class="form-control" type="text" inputmode="numeric" id="ep-stock" value="${p.stock}" oninput="filterNumInput(this,false)"/></div>
         <div class="form-group"><label>Tồn tối thiểu</label><input class="form-control" type="text" inputmode="numeric" id="ep-min" value="${p.minStock}" oninput="filterNumInput(this,false)"/></div>
       </div>
+      ${prodImageInputHTML()}
       <div style="margin-top:16px;font-weight:700;font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.4px">Đơn vị bán</div>
       <div id="edit-units-container" style="margin-top:8px"></div>
       <button class="btn btn-outline btn-sm mt-8" onclick="addEditUnitRow()">+ Thêm đơn vị</button>
@@ -1598,6 +1646,7 @@ function showEditProduct(id){
     </div>
   </div>`);
   renderEditUnitRows();
+  renderProdImagePreview();
 }
 function addEditUnitRow(){window._editUnits.push({name:'',ratio:1,price:0});renderEditUnitRows();}
 function renderEditUnitRows(){
@@ -1617,6 +1666,7 @@ function saveEditProduct(id){
   p.cost=+document.getElementById('ep-cost').value;p.supplier=document.getElementById('ep-sup').value;
   p.stock=+document.getElementById('ep-stock').value;p.minStock=+document.getElementById('ep-min').value;
   p.units=window._editUnits.filter(u=>u.name);p.price=p.units[0]?.price||p.price;
+  p.image=window._prodImage||'';
   saveDB();closeModal();toast('Đã cập nhật!');
   renderAdminProducts(document.getElementById('admin-content'));
 }
