@@ -11,7 +11,7 @@
   const LOCAL_KEY = 'agropos_v2';
   const META_KEY = 'agropos_v2_meta';
   const DEBOUNCE_MS = 2000;
-  const POLL_INTERVAL = 15000; // 15 giây check cloud 1 lần
+  const POLL_INTERVAL = 1000; // 1 giây check cloud 1 lần
   
   // ID gốc trong dữ liệu mẫu (DEFAULT) của app — dùng để nhận diện dữ liệu
   // "chưa từng được người dùng chỉnh sửa" nhằm tránh đè mất dữ liệu thật trên cloud.
