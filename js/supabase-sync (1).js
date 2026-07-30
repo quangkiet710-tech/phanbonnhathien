@@ -1,5 +1,5 @@
 // ============================================================
-// ĐỒNG BỘ DỮ LIỆU QUA SUPABASE
+// ĐỒNG BỘ DỮ LIỆU QUA SUPABASE (FIX: Thêm polling + sync on focus)
 // Bảng: pos_store (id text PK, data jsonb, updated_at timestamptz)
 // Chỉ dùng 1 dòng duy nhất id = 'nhathien-main'
 // ============================================================
@@ -11,6 +11,8 @@
   const LOCAL_KEY = 'agropos_v2';
   const META_KEY = 'agropos_v2_meta';
   const DEBOUNCE_MS = 2000;
+  const POLL_INTERVAL = 15000; // 15 giây check cloud 1 lần
+  
   // ID gốc trong dữ liệu mẫu (DEFAULT) của app — dùng để nhận diện dữ liệu
   // "chưa từng được người dùng chỉnh sửa" nhằm tránh đè mất dữ liệu thật trên cloud.
   const SEED_CUSTOMER_IDS = 'c1,c2,c3';
@@ -177,6 +179,61 @@
     finishInitialPull();
   }
 
+  // ---------- [NEW] Polling: kiểm tra cloud định kỳ ----------
+  let pollTimer = null;
+  async function pollCloud() {
+    if (!navigator.onLine || !initialPullDone) return;
+    try {
+      const { data, error } = await client
+        .from(TABLE)
+        .select('data, updated_at')
+        .eq('id', ROW_ID)
+        .maybeSingle();
+      if (error) throw error;
+      if (data && data.updated_at) {
+        const cloudTime = new Date(data.updated_at).getTime();
+        const localTime = getMeta().updatedAt || 0;
+        
+        // Nếu cloud mới hơn máy -> tải về và reload
+        if (cloudTime > localTime && !isRiskyLocalData(data.data)) {
+          console.log('[sync] Phát hiện dữ liệu cloud mới hơn, đang tải về...');
+          localStorage.setItem(LOCAL_KEY, JSON.stringify(data.data));
+          setMeta({ updatedAt: cloudTime });
+          location.reload();
+        }
+      }
+    } catch (e) {
+      console.error('[sync] Polling cloud thất bại:', e);
+    }
+  }
+  function startPolling() {
+    if (pollTimer) clearInterval(pollTimer);
+    pollTimer = setInterval(pollCloud, POLL_INTERVAL);
+  }
+  function stopPolling() {
+    if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+  }
+
+  // ---------- [NEW] Sync on focus: khi quay lại app/tab ----------
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) {
+      stopPolling();
+    } else {
+      // Quay lại app/tab -> kiểm tra cloud ngay
+      console.log('[sync] Quay lại app, kiểm tra cloud...');
+      if (initialPullDone) pollCloud();
+      startPolling();
+    }
+  });
+
+  // ---------- [NEW] Sync giữa các tabs ----------
+  window.addEventListener('storage', (event) => {
+    if (event.key === LOCAL_KEY && event.newValue && event.oldValue !== event.newValue) {
+      console.log('[sync] Phát hiện thay đổi từ tab khác, đang reload...');
+      location.reload();
+    }
+  });
+
   // ---------- gắn vào saveDB() của app ----------
   function hookSaveDB() {
     if (typeof window.saveDB !== 'function') { setTimeout(hookSaveDB, 200); return; }
@@ -189,10 +246,22 @@
   }
 
   // ---------- trạng thái mạng ----------
-  window.addEventListener('online', () => { setStatus('syncing'); if (initialPullDone) pushNow(); });
-  window.addEventListener('offline', () => setStatus('offline'));
+  window.addEventListener('online', () => { 
+    console.log('[sync] Quay lại online');
+    setStatus('syncing'); 
+    if (initialPullDone) { pushNow(); pollCloud(); }
+  });
+  window.addEventListener('offline', () => { 
+    console.log('[sync] Mất mạng');
+    setStatus('offline');
+    stopPolling();
+  });
 
   ensureIndicator();
   hookSaveDB();
   pullAndMaybeReload();
+  // Bắt đầu polling sau khi initial pull xong
+  setTimeout(() => {
+    if (initialPullDone) startPolling();
+  }, 1000);
 })();
