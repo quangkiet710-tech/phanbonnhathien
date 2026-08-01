@@ -2186,6 +2186,43 @@ function deleteSupplier(supplier){
 }
 
 /* ---- CUSTOMERS ---- */
+function showCustomerDetail(custId){
+  const cu=DB.customers.find(x=>x.id===custId);if(!cu)return;
+  const sales=(DB.dailySales||[]).filter(s=>s.customerId===custId);
+  const totalBuy=sales.reduce((s,e)=>s+(e.totalAmount||0),0);
+  const totalProfit=sales.reduce((s,e)=>s+e.items.reduce((ss,it)=>ss+(it.profit||0),0),0);
+
+  showModal(`<div class="modal modal-lg">
+    <div class="modal-header"><span>👤</span><h2>${cu.name} - Chi tiết</h2><button class="btn btn-ghost btn-icon" onclick="closeModal()">✕</button></div>
+    <div class="modal-body">
+      <div class="alert alert-info mb-16" style="font-size:13px">
+        📊 <strong>Tổng mua:</strong> ${fmtK(totalBuy)} | <strong>Thu lợi:</strong> <span class="text-green font-bold">+${fmtK(totalProfit)}</span> | <strong>Công nợ:</strong> <span class="text-red font-bold">${fmtK(cu.debt||0)}</span>
+      </div>
+      <div class="card">
+        <div class="card-header">📋 Lịch sử mua hàng</div>
+        <div class="tbl-wrap"><table>
+          <thead><tr><th>Ngày</th><th>Sản phẩm</th><th>SL</th><th>Giá</th><th>Thành tiền</th><th>Lãi/Lỗ</th></tr></thead>
+          <tbody>${sales.length?sales.map(s=>`
+            <tr style="border-top:1px solid #ddd;font-size:12px">
+              <td colspan="6" style="padding:8px;background:#f5f5f5;font-weight:600">${s.date} (${s.time})</td>
+            </tr>
+            ${s.items.map(it=>`<tr>
+              <td></td>
+              <td>${it.icon||'📦'} ${it.name}</td>
+              <td>${it.qty} ${it.unit||''}</td>
+              <td>${fmtK(it.price)}</td>
+              <td class="font-bold">${fmtK(it.qty*it.price)}</td>
+              <td class="${(it.profit||0)>=0?'text-green':'text-red'} font-bold">${(it.profit||0)>=0?'+':''} ${fmtK(it.profit||0)}</td>
+            </tr>`).join('')}
+          `).join(''):'<tr><td colspan="6" class="text-center text-muted" style="padding:20px">Chưa có ghi chép nào</td></tr>'}
+          </tbody>
+        </table></div>
+      </div>
+    </div>
+    <div class="modal-footer"><button class="btn btn-outline" onclick="closeModal()">Đóng</button></div>
+  </div>`);
+}
+
 function renderAdminCustomers(c){
   const custStats=cu=>{
     const totalBuy=(DB.dailySales||[]).filter(s=>s.customerId===cu.id).reduce((s,e)=>s+(e.totalAmount||0),0);
@@ -2203,7 +2240,7 @@ function renderAdminCustomers(c){
           const stats=custStats(cu);
           return `<tr>
             <td>${i+1}</td>
-            <td><strong>${cu.name}</strong>${cu.notes?`<div class="text-xs text-muted">${cu.notes}</div>`:''}</td>
+            <td><strong style="cursor:pointer;color:var(--g800)" onclick="showCustomerDetail('${cu.id}')">${cu.name}</strong>${cu.notes?`<div class="text-xs text-muted">${cu.notes}</div>`:''}</td>
             <td>📞 ${cu.phone}</td>
             <td><span class="badge ${stats.rank==='VIP'?'badge-amber':stats.rank==='Silver'?'badge-blue':stats.rank==='Bronze'?'badge-gray':'badge-gray'}">${stats.rank}</span></td>
             <td class="text-green font-bold">${fmtK(stats.totalBuy)}</td>
@@ -2669,11 +2706,12 @@ function deleteDailySales(id){
       if(p)p.stock+=it.qty;
     });
     // Restore thông tin khách hàng
-    if(entry.customerId&&entry.customerId!==''){
-      const cust=DB.customers.find(x=>x.id===entry.customerId);
+    if(entry.customerName&&entry.customerName!=='khách vãng lai'){
+      let cust=DB.customers.find(x=>x.id===entry.customerId);
+      if(!cust)cust=DB.customers.find(x=>x.name===entry.customerName);
       if(cust){
-        cust.revenue=(cust.revenue||0)-(entry.totalAmount||0);
-        cust.debt=(cust.debt||0)-(entry.totalAmount||0);
+        cust.revenue=Math.max(0,(cust.revenue||0)-(entry.totalAmount||0));
+        cust.debt=Math.max(0,(cust.debt||0)-(entry.totalAmount||0));
       }
     }
   }
