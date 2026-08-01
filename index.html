@@ -2531,14 +2531,31 @@ function saveDailySales(editId){
   if(!date){toast('Chọn ngày bán!','error');return;}
   if(!dailySalesCart.length){toast('Thêm ít nhất 1 sản phẩm!','error');return;}
 
-  // Tính FIFO lãi/lỗ (KHÔNG trừ kho - chỉ ghi nhận bán)
+  // Tính FIFO lãi/lỗ
   const items=calculateFIFOCost(dailySalesCart);
   const totalAmount=items.reduce((s,i)=>s+i.qty*i.price,0);
   const totalProfit=items.reduce((s,i)=>s+(i.profit||0),0);
 
+  // Kiểm tra tồn kho đủ không (cảnh báo)
+  const warnings=[];
+  items.forEach(it=>{
+    const p=DB.products.find(x=>x.id===it.productId);
+    if(p&&p.stock<it.qty){
+      warnings.push(`⚠️ ${it.name}: tồn ${p.stock}, bán ${it.qty}`);
+    }
+  });
+  if(warnings.length&&!confirm('Cảnh báo tồn kho không đủ:\n'+warnings.join('\n')+'\n\nVẫn lưu không?')){
+    return;
+  }
+
   if(editId){
     const e=DB.dailySales.find(x=>x.id===editId);
     if(!e){toast('Không tìm thấy ghi chép!','error');return;}
+    // Restore kho từ entry cũ
+    (e.items||[]).forEach(it=>{
+      const p=DB.products.find(x=>x.id===it.productId);
+      if(p)p.stock+=it.qty;
+    });
     e.date=date;e.note=note;
     e.items=JSON.parse(JSON.stringify(items));
     e.totalAmount=totalAmount;
@@ -2554,6 +2571,13 @@ function saveDailySales(editId){
     DB.dailySales.unshift(entry);
     addPriceHistory('selling',entry.items.map(x=>({productId:x.productId,name:x.name,price:x.price,qty:x.qty})),date,entry.id,'dailySales');
   }
+
+  // Trừ kho
+  items.forEach(it=>{
+    const p=DB.products.find(x=>x.id===it.productId);
+    if(p)p.stock-=it.qty;
+  });
+
   saveDB();
   closeModal();
   toast(editId?'Đã cập nhật sổ bán hàng!':`Đã ghi sổ! Doanh thu: ${fmt(totalAmount)} | Lãi: ${fmt(totalProfit)}`);
@@ -2564,10 +2588,17 @@ function saveDailySales(editId){
 function showEditDailySales(id){showDailySalesForm(id);}
 
 function deleteDailySales(id){
-  if(!confirm('Xóa ghi chép bán hàng này?'))return;
+  if(!confirm('Xóa ghi chép bán hàng này? Kho hàng sẽ được restore.'))return;
+  const entry=DB.dailySales.find(x=>x.id===id);
+  if(entry){
+    (entry.items||[]).forEach(it=>{
+      const p=DB.products.find(x=>x.id===it.productId);
+      if(p)p.stock+=it.qty;
+    });
+  }
   DB.dailySales=DB.dailySales.filter(x=>x.id!==id);
   saveDB();
-  toast('Đã xóa ghi chép','warning');
+  toast('Đã xóa ghi chép và restore kho hàng','warning');
   renderDailySalesTable();
 }
 
