@@ -2187,26 +2187,34 @@ function deleteSupplier(supplier){
 
 /* ---- CUSTOMERS ---- */
 function renderAdminCustomers(c){
+  const custStats=cu=>{
+    const totalBuy=(DB.dailySales||[]).filter(s=>s.customerId===cu.id).reduce((s,e)=>s+(e.totalAmount||0),0);
+    const rank=totalBuy>=10000000?'VIP':totalBuy>=5000000?'Silver':totalBuy>=1000000?'Bronze':'Regular';
+    const debt=cu.debt||0;
+    return {totalBuy,rank,debt};
+  };
   c.innerHTML=`
   <div class="admin-page-header"><span>👥</span><h1>Khách hàng</h1><button class="btn btn-green btn-sm" onclick="showAddCustomer()">+ Thêm</button></div>
   <div class="page-body-scroll">
     <div class="card">
       <div class="tbl-wrap"><table>
-        <thead><tr><th>#</th><th>Tên khách</th><th>SĐT</th><th>Hạng</th><th>Điểm</th><th>Tổng mua</th><th>Công nợ</th><th></th></tr></thead>
-        <tbody>${DB.customers.map((cu,i)=>`<tr>
-          <td>${i+1}</td>
-          <td><strong>${cu.name}</strong>${cu.notes?`<div class="text-xs text-muted">${cu.notes}</div>`:''}</td>
-          <td>📞 ${cu.phone}</td>
-          <td><span class="badge ${cu.type==='VIP'?'badge-amber':cu.type==='Sỉ'?'badge-blue':'badge-gray'}">${cu.type}</span></td>
-          <td>⭐ ${cu.points||0}</td>
-          <td class="text-green font-bold">${fmt(cu.totalBuy||0)}</td>
-          <td class="${cu.debt>0?'text-red font-bold':''}">${cu.debt>0?fmtK(cu.debt):'—'}</td>
-          <td><div style="display:flex;gap:4px">
-            <button class="btn btn-outline btn-sm" onclick="showEditCustomer('${cu.id}')">✏️</button>
-            ${cu.debt>0?`<button class="btn btn-green btn-sm" onclick="showPayDebt('${cu.id}')">Thu nợ</button>`:''}
-            <button class="btn btn-red btn-sm" onclick="deleteCustomer('${cu.id}')">🗑</button>
-          </div></td>
-        </tr>`).join('')}
+        <thead><tr><th>#</th><th>Tên khách</th><th>SĐT</th><th>Hạng</th><th>Tổng mua (auto)</th><th>Công nợ</th><th>Thanh toán</th><th></th></tr></thead>
+        <tbody>${DB.customers.map((cu,i)=>{
+          const stats=custStats(cu);
+          return `<tr>
+            <td>${i+1}</td>
+            <td><strong>${cu.name}</strong>${cu.notes?`<div class="text-xs text-muted">${cu.notes}</div>`:''}</td>
+            <td>📞 ${cu.phone}</td>
+            <td><span class="badge ${stats.rank==='VIP'?'badge-amber':stats.rank==='Silver'?'badge-blue':stats.rank==='Bronze'?'badge-gray':'badge-gray'}">${stats.rank}</span></td>
+            <td class="text-green font-bold">${fmtK(stats.totalBuy)}</td>
+            <td class="${stats.debt>0?'text-red font-bold':''}">${stats.debt>0?fmtK(stats.debt):'—'}</td>
+            <td><div style="display:flex;gap:4px">
+              <button class="btn btn-outline btn-sm" onclick="showEditCustomer('${cu.id}')">✏️ Sửa</button>
+              ${stats.debt>0?`<button class="btn btn-green btn-sm" onclick="showPayDebt('${cu.id}')">💳 Thu nợ</button>`:''}
+              <button class="btn btn-red btn-sm" onclick="deleteCustomer('${cu.id}')">🗑</button>
+            </div></td>
+          </tr>`;
+        }).join('')}
         </tbody>
       </table></div>
     </div>
@@ -2236,14 +2244,19 @@ function saveNewCustomer(){
 }
 function showEditCustomer(id){
   const cu=DB.customers.find(x=>x.id===id);if(!cu)return;
+  const totalBuy=(DB.dailySales||[]).filter(s=>s.customerId===cu.id).reduce((s,e)=>s+(e.totalAmount||0),0);
+  const autoRank=totalBuy>=10000000?'VIP':totalBuy>=5000000?'Silver':totalBuy>=1000000?'Bronze':'Regular';
   showModal(`<div class="modal">
     <div class="modal-header"><span>✏️</span><h2>Sửa: ${cu.name}</h2><button class="btn btn-ghost btn-icon" onclick="closeModal()">✕</button></div>
     <div class="modal-body">
       <div class="grid-2"><div class="form-group"><label>Tên *</label><input class="form-control" id="ec-name" value="${cu.name}"/></div><div class="form-group"><label>SĐT</label><input class="form-control" id="ec-phone" value="${cu.phone}"/></div></div>
       <div class="form-group mt-12"><label>Địa chỉ</label><input class="form-control" id="ec-addr" value="${cu.address}"/></div>
+      <div class="alert alert-info mb-12" style="font-size:12px;background:#e3f2fd;border-left:3px solid #1565c0;padding:10px">
+        📊 <strong>Tổng mua (auto):</strong> ${fmtK(totalBuy)} | <strong>Xếp hạng gợi ý:</strong> <span class="badge badge-blue">${autoRank}</span>
+      </div>
       <div class="grid-2 mt-12">
-        <div class="form-group"><label>Hạng</label><select class="form-control" id="ec-type"><option ${cu.type==='Thường'?'selected':''}>Thường</option><option ${cu.type==='VIP'?'selected':''}>VIP</option><option ${cu.type==='Sỉ'?'selected':''}>Sỉ</option></select></div>
-        <div class="form-group"><label>Công nợ (đ)</label><input class="form-control" type="text" inputmode="numeric" id="ec-debt" value="${cu.debt}" oninput="filterNumInput(this,false)"/></div>
+        <div class="form-group"><label>Hạng (thủ công)</label><select class="form-control" id="ec-type"><option value="">Tự động</option><option ${cu.type==='VIP'?'selected':''}>VIP</option><option ${cu.type==='Silver'?'selected':''}>Silver</option><option ${cu.type==='Bronze'?'selected':''}>Bronze</option><option ${cu.type==='Regular'?'selected':''}>Regular</option></select></div>
+        <div class="form-group"><label>Công nợ hiện tại (k)</label><input class="form-control" type="text" inputmode="numeric" id="ec-debt" value="${cu.debt}" oninput="filterNumInput(this,false)"/></div>
       </div>
       <div class="form-group mt-12"><label>Ghi chú</label><input class="form-control" id="ec-note" value="${cu.notes}"/></div>
     </div>
