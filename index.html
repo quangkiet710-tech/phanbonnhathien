@@ -2590,6 +2590,14 @@ function saveDailySales(editId){
     e.items=JSON.parse(JSON.stringify(items));
     e.totalAmount=totalAmount;
     e.totalProfit=totalProfit;
+    // Cộng nợ cho khách hàng mới
+    if(custId){
+      const newCust=DB.customers.find(x=>x.id===custId);
+      if(newCust){
+        newCust.revenue=(newCust.revenue||0)+totalAmount;
+        newCust.debt=(newCust.debt||0)+totalAmount;
+      }
+    }
   }else{
     const entry={
       id:'SB'+Date.now().toString().slice(-6),
