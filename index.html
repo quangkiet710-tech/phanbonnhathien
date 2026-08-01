@@ -2535,7 +2535,7 @@ function dsPickProd(id){
   const sel=document.getElementById('ds-unit');
   if(sel){
     sel.innerHTML=p.units.map((u,i)=>`<option value="${u.name}" data-price="${u.price}" ${i===0?'selected':''}>${u.name}</option>`).join('');
-    sel.onchange=function(){const o=this.selectedOptions[0];const pr=document.getElementById('ds-price');if(o&&pr)pr.value=o.dataset.price;};
+    sel.onchange=function(){const o=this.selectedOptions[0];const pr=document.getElementById('ds-price');if(o&&pr){}; /* người dùng nhập giá thủ công */};
   }
   // Tính giá vốn từ FIFO
   const lots=[];
