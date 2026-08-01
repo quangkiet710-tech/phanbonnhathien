@@ -2631,11 +2631,22 @@ function saveDailySales(editId){
   });
 
   // Cập nhật thông tin khách hàng (nếu không phải khách vãng lai)
-  if(custId){
-    const cust=DB.customers.find(x=>x.id===custId);
+  if(custName!=='khách vãng lai'){
+    let cust=DB.customers.find(x=>x.id===custId);
+    // Nếu chưa có custId hoặc khách không tồn tại, tìm theo tên
+    if(!cust&&custName){
+      cust=DB.customers.find(x=>x.name===custName);
+    }
+    // Nếu vẫn không tìm thấy, tạo khách hàng mới
+    if(!cust){
+      cust={id:'CUS'+uid(),name:custName,phone:'',debt:0,revenue:0};
+      DB.customers.push(cust);
+    }
+    // Cộng doanh thu + nợ
     if(cust){
       cust.revenue=(cust.revenue||0)+totalAmount;
       cust.debt=(cust.debt||0)+totalAmount;
+      custId=cust.id;
     }
   }
 
