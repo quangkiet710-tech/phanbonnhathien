@@ -1405,11 +1405,6 @@ function renderAdminDash(c){
   const totalDebt=DB.customers.reduce((s,c)=>s+(c.debt||0),0);
   const lowStock=DB.products.filter(p=>p.stock<=p.minStock);
   const pendingOrders=DB.custOrders.filter(o=>o.status==='pending');
-  const today_=today();
-  const todayDailySales=(DB.dailySales||[]).filter(s=>s.date===today_);
-  const todayDailyProfit=todayDailySales.reduce((s,e)=>s+e.items.reduce((ss,it)=>ss+(it.profit||0),0),0);
-  const totalDailyRevenue=todayDailySales.reduce((s,e)=>s+(e.totalAmount||0),0);
-  const totalDailyProfit=(DB.dailySales||[]).reduce((s,e)=>s+e.items.reduce((ss,it)=>ss+(it.profit||0),0),0);
 
   const months=['T1','T2','T3','T4','T5','T6','T7','T8','T9','T10','T11','T12'];
   const mData=months.map((_,mi)=>DB.invoices.filter(i=>new Date(i.date).getMonth()===mi).reduce((s,i)=>s+i.paid,0));
@@ -1419,13 +1414,10 @@ function renderAdminDash(c){
   <div class="admin-page-header"><span>📊</span><h1>Tổng quan</h1></div>
   <div class="page-body-scroll">
     <div class="stat-grid">
-      <div class="stat-card"><div class="s-icon-wrap">💰</div><div class="s-label">Hôm nay (HĐ)</div><div class="s-val" style="font-size:17px;color:var(--g800)">${fmt(todayRev)}</div><div class="s-sub">${todayInvs.length} hóa đơn</div></div>
+      <div class="stat-card"><div class="s-icon-wrap">💰</div><div class="s-label">Hôm nay</div><div class="s-val" style="font-size:17px;color:var(--g800)">${fmt(todayRev)}</div><div class="s-sub">${todayInvs.length} hóa đơn</div></div>
       <div class="stat-card"><div class="s-icon-wrap">📈</div><div class="s-label">Tổng DT</div><div class="s-val" style="font-size:17px">${fmt(totalRev)}</div><div class="s-sub">${DB.invoices.length} HĐ</div></div>
       <div class="stat-card"><div class="s-icon-wrap">💳</div><div class="s-label">Công nợ</div><div class="s-val" style="font-size:17px;color:var(--red)">${fmt(totalDebt)}</div><div class="s-sub">${DB.customers.filter(c=>c.debt>0).length} khách</div></div>
       <div class="stat-card"><div class="s-icon-wrap">📦</div><div class="s-label">Đơn chờ</div><div class="s-val" style="color:${pendingOrders.length?'var(--amber)':'var(--g800)'}">${pendingOrders.length}</div><div class="s-sub">Cần xử lý</div></div>
-      <div class="stat-card"><div class="s-icon-wrap">📝</div><div class="s-label">Sổ hôm nay</div><div class="s-val" style="font-size:17px;color:var(--g800)">${fmt(totalDailyRevenue)}</div><div class="s-sub">${todayDailySales.length} ghi chép</div></div>
-      <div class="stat-card"><div class="s-icon-wrap">💹</div><div class="s-label">Lãi hôm nay</div><div class="s-val" style="font-size:17px;${todayDailyProfit>=0?'color:var(--g800)':'color:var(--red)'}">${todayDailyProfit>=0?'+':''} ${fmt(todayDailyProfit)}</div><div class="s-sub">Sổ bán hàng</div></div>
-      <div class="stat-card"><div class="s-icon-wrap">📊</div><div class="s-label">Tổng lãi</div><div class="s-val" style="font-size:17px;${totalDailyProfit>=0?'color:var(--g800)':'color:var(--red)'}">${totalDailyProfit>=0?'+':''} ${fmt(totalDailyProfit)}</div><div class="s-sub">Tất cả sổ</div></div>
     </div>
 
     ${pendingOrders.length?`<div class="alert alert-warn mb-16">⚠️ Có <strong>${pendingOrders.length}</strong> đơn online chờ xử lý! <button class="btn btn-outline btn-sm" onclick="showAdminPage('invoices')">Xem ngay →</button></div>`:''}
@@ -2318,57 +2310,6 @@ function processPayDebt(id){
 let dailySalesCart=[];
 let dailySalesDate=today();
 
-// FIFO logic: lấy giá vốn từ lô nhập cũ nhất của sản phẩm
-function getInventoryLots(){
-  const lots=[];
-  (DB.stockImports||[]).forEach(imp=>{
-    (imp.items||[]).forEach(item=>{
-      lots.push({productId:item.productId,cost:item.cost,qty:item.qty,importId:imp.id,importDate:imp.date});
-    });
-  });
-  return lots.sort((a,b)=>(a.importDate||'').localeCompare(b.importDate||''));
-}
-
-function calculateFIFOCostAndDeduct(items){
-  const lots=getInventoryLots();
-  const result=[];
-  const deductions={};
-
-  items.forEach(it=>{
-    let remaining=it.qty;
-    let totalCost=0;
-    let costPrice=0;
-    let usedLots=0;
-
-    for(let lot of lots){
-      if(lot.productId!==it.productId||remaining<=0)continue;
-      const take=Math.min(remaining,lot.qty);
-      totalCost+=take*lot.cost;
-      remaining-=take;
-      lot.qty-=take;
-      usedLots++;
-      if(!deductions[it.productId])deductions[it.productId]=0;
-      deductions[it.productId]+=take;
-    }
-
-    if(remaining>0){
-      toast(`⚠️ Sản phẩm "${it.name}" thiếu ${remaining} trong kho! Chỉ dùng số lượng có sẵn.`,'warning');
-      totalCost=it.qty*it.cost;
-      costPrice=it.cost||0;
-    }else{
-      costPrice=it.qty>0?totalCost/it.qty:0;
-    }
-
-    const profit=(it.price-costPrice)*it.qty;
-    result.push({
-      ...it,costPrice:Math.round(costPrice),profit:Math.round(profit),
-      profitMargin:it.price>0?((it.price-costPrice)/it.price*100).toFixed(1)+'%':'0%'
-    });
-  });
-
-  return{items:result,deductions};
-}
-
 function renderAdminDailySales(c){
   if(!Array.isArray(DB.dailySales))DB.dailySales=[];
   c.innerHTML=`
@@ -2383,7 +2324,7 @@ function renderAdminDailySales(c){
     <div class="card">
       <div class="card-header">📝 Sổ bán hàng trong ngày</div>
       <div class="tbl-wrap"><table>
-        <thead><tr><th>Thời gian</th><th>Sản phẩm</th><th>SL</th><th>Giá vốn</th><th>Đơn giá</th><th>Thành tiền</th><th>Lãi/Lỗ</th><th>Ghi chú</th><th></th></tr></thead>
+        <thead><tr><th>Thời gian</th><th>Sản phẩm</th><th>SL</th><th>Đơn giá</th><th>Thành tiền</th><th>Ghi chú</th><th></th></tr></thead>
         <tbody id="ds-tbl-body"></tbody>
         <tfoot id="ds-tbl-foot"></tfoot>
       </table></div>
@@ -2399,7 +2340,7 @@ function renderDailySalesTable(){
   if(!Array.isArray(DB.dailySales))DB.dailySales=[];
   const entries=DB.dailySales.filter(e=>e.date===dailySalesDate);
   if(!entries.length){
-    body.innerHTML='<tr><td colspan="9" class="text-center text-muted" style="padding:24px">Chưa có ghi chép bán hàng ngày này</td></tr>';
+    body.innerHTML='<tr><td colspan="7" class="text-center text-muted" style="padding:24px">Chưa có ghi chép bán hàng ngày này</td></tr>';
     foot.innerHTML='';
     return;
   }
@@ -2409,10 +2350,8 @@ function renderDailySalesTable(){
       ${i===0?`<td rowspan="${n}"><code>${e.time||e.id}</code></td>`:''}
       <td>${it.icon||'📦'} ${it.name}</td>
       <td>${it.qty} ${it.unit||''}</td>
-      <td>${fmt(it.costPrice||0)}</td>
       <td>${fmt(it.price)}</td>
       <td class="font-bold">${fmt(it.qty*it.price)}</td>
-      <td class="${(it.profit||0)>=0?'text-green':'text-red'} font-bold">${(it.profit||0)>=0?'+':''} ${fmt(it.profit||0)}</td>
       ${i===0?`<td rowspan="${n}" style="max-width:140px;overflow:hidden;text-overflow:ellipsis">${e.note||'—'}</td>
       <td rowspan="${n}"><div style="display:flex;gap:4px">
         <button class="btn btn-outline btn-sm" onclick="showEditDailySales('${e.id}')">✏️</button>
@@ -2421,8 +2360,7 @@ function renderDailySalesTable(){
     </tr>`).join('');
   }).join('');
   const total=entries.reduce((s,e)=>s+(e.totalAmount||0),0);
-  const profit=entries.reduce((s,e)=>s+e.items.reduce((ss,it)=>ss+(it.profit||0),0),0);
-  foot.innerHTML=`<tr><td colspan="5" class="text-right font-bold">💰 Ngày ${fmtD(dailySalesDate)}:</td><td class="font-bold text-green">${fmt(total)}</td><td class="${profit>=0?'font-bold text-green':'font-bold text-red'}">${profit>=0?'+':''} ${fmt(profit)}</td><td colspan="2"></td></tr>`;
+  foot.innerHTML=`<tr><td colspan="4" class="text-right font-bold">💰 Tổng doanh thu ngày ${fmtD(dailySalesDate)}:</td><td class="font-bold text-green">${fmt(total)}</td><td colspan="2"></td></tr>`;
 }
 
 function showDailySalesForm(editId){
@@ -2447,8 +2385,7 @@ function showDailySalesForm(editId){
         </div>
         <div class="form-group" style="margin:0;min-width:100px"><label style="font-size:10px">Đơn vị</label><select class="form-control" id="ds-unit"><option value="">—</option></select></div>
         <div class="form-group" style="margin:0;width:70px"><label style="font-size:10px">SL</label><input class="form-control" type="text" inputmode="numeric" id="ds-qty" oninput="filterNumInput(this,true)"/></div>
-        <div class="form-group" style="margin:0;min-width:90px"><label style="font-size:10px">Giá vốn</label><input class="form-control" type="text" inputmode="numeric" id="ds-cost" readonly style="background:var(--g50)"/></div>
-        <div class="form-group" style="margin:0;flex:1;min-width:100px"><label style="font-size:10px">Đơn giá bán</label><input class="form-control" type="text" inputmode="numeric" id="ds-price" oninput="filterNumInput(this,false)"/></div>
+        <div class="form-group" style="margin:0;flex:1;min-width:100px"><label style="font-size:10px">Đơn giá</label><input class="form-control" type="text" inputmode="numeric" id="ds-price" oninput="filterNumInput(this,false)"/></div>
         <button class="btn btn-green btn-icon" onclick="addDailySalesItem()">+</button>
       </div>
       <div id="ds-items" class="mt-8"></div>
@@ -2483,14 +2420,6 @@ function dsPickProd(id){
     sel.innerHTML=p.units.map((u,i)=>`<option value="${u.name}" data-price="${u.price}" ${i===0?'selected':''}>${u.name}</option>`).join('');
     sel.onchange=function(){const o=this.selectedOptions[0];const pr=document.getElementById('ds-price');if(o&&pr)pr.value=o.dataset.price;};
   }
-  // Tính giá vốn từ FIFO
-  const lots=getInventoryLots();
-  let fifoVonPrice=0;
-  for(let lot of lots){
-    if(lot.productId===id){fifoVonPrice=lot.cost;break;}
-  }
-  const costEl=document.getElementById('ds-cost');
-  if(costEl)costEl.value=fifoVonPrice||p.cost||'';
   const pr=document.getElementById('ds-price');
   if(pr)pr.value=p.units[0]?.price||p.price||'';
   const ac=document.getElementById('ds-ac');if(ac){ac.style.display='none';ac.innerHTML='';}
@@ -2504,17 +2433,13 @@ function addDailySalesItem(){
   if(!p){toast('Chọn sản phẩm từ danh sách gợi ý!','error');return;}
   const qty=+(document.getElementById('ds-qty')?.value||0);
   const price=+(document.getElementById('ds-price')?.value||0);
-  const costPrice=+(document.getElementById('ds-cost')?.value||0);
   const unit=document.getElementById('ds-unit')?.value||p.units[0]?.name||'';
   if(qty<=0){toast('Nhập số lượng!','error');return;}
   if(price<0){toast('Đơn giá không hợp lệ!','error');return;}
-  const profit=(price-costPrice)*qty;
-  const profitMargin=price>0?((price-costPrice)/price*100).toFixed(1)+'%':'0%';
-  dailySalesCart.push({productId:p.id,name:p.name,icon:p.icon,unit,qty,price,costPrice,profit:Math.round(profit),profitMargin});
+  dailySalesCart.push({productId:p.id,name:p.name,icon:p.icon,unit,qty,price});
   inp.value='';inp.dataset.pid='';
   const q=document.getElementById('ds-qty');if(q)q.value='';
   const pr=document.getElementById('ds-price');if(pr)pr.value='';
-  const costEl=document.getElementById('ds-cost');if(costEl)costEl.value='';
   const sel=document.getElementById('ds-unit');if(sel)sel.innerHTML='<option value="">—</option>';
   renderDailySalesItems();
   inp.focus();
@@ -2526,20 +2451,18 @@ function renderDailySalesItems(){
     c.innerHTML='<div class="text-center text-muted" style="padding:16px;font-size:13px">Chưa có sản phẩm nào</div>';
   }else{
     c.innerHTML=`<div class="tbl-wrap"><table>
-      <thead><tr><th>Sản phẩm</th><th>ĐVT</th><th>SL</th><th>Giá vốn</th><th>Đơn giá</th><th>Thành tiền</th><th>Lãi/Lỗ</th><th></th></tr></thead>
+      <thead><tr><th>Sản phẩm</th><th>ĐVT</th><th>SL</th><th>Đơn giá</th><th>Thành tiền</th><th></th></tr></thead>
       <tbody>${dailySalesCart.map((it,i)=>`<tr>
         <td>${it.icon||'📦'} ${it.name}</td><td>${it.unit||'—'}</td><td>${it.qty}</td>
-        <td>${fmt(it.costPrice||0)}</td><td>${fmt(it.price)}</td><td class="font-bold">${fmt(it.qty*it.price)}</td>
-        <td class="${(it.profit||0)>=0?'text-green':'text-red'} font-bold">${(it.profit||0)>=0?'+':''} ${fmt(it.profit||0)}</td>
+        <td>${fmt(it.price)}</td><td class="font-bold">${fmt(it.qty*it.price)}</td>
         <td><button class="btn btn-red btn-sm btn-icon" onclick="dailySalesCart.splice(${i},1);renderDailySalesItems()">✕</button></td>
       </tr>`).join('')}</tbody>
     </table></div>`;
   }
   const totalQty=dailySalesCart.reduce((s,i)=>s+i.qty,0);
   const total=dailySalesCart.reduce((s,i)=>s+i.qty*i.price,0);
-  const profit=dailySalesCart.reduce((s,i)=>s+(i.profit||0),0);
   const d=document.getElementById('ds-total-display');
-  if(d)d.textContent=`SL: ${totalQty} | Doanh thu: ${fmt(total)} | Lãi: ${fmt(profit)}`;
+  if(d)d.textContent=`SL: ${totalQty} | Tổng: ${fmt(total)}`;
 }
 
 function saveDailySales(editId){
@@ -2548,46 +2471,27 @@ function saveDailySales(editId){
   const note=document.getElementById('ds-note')?.value.trim()||'';
   if(!date){toast('Chọn ngày bán!','error');return;}
   if(!dailySalesCart.length){toast('Thêm ít nhất 1 sản phẩm!','error');return;}
-
-  // Tính FIFO và trừ kho
-  const fifo=calculateFIFOCostAndDeduct(dailySalesCart);
-  const items=fifo.items;
-  const totalAmount=items.reduce((s,i)=>s+i.qty*i.price,0);
-  const totalProfit=items.reduce((s,i)=>s+(i.profit||0),0);
-
+  const totalAmount=dailySalesCart.reduce((s,i)=>s+i.qty*i.price,0);
   if(editId){
     const e=DB.dailySales.find(x=>x.id===editId);
     if(!e){toast('Không tìm thấy ghi chép!','error');return;}
-    // Restore kho từ entry cũ
-    (e.items||[]).forEach(it=>{
-      const p=DB.products.find(x=>x.id===it.productId);
-      if(p)p.stock+=it.qty;
-    });
     e.date=date;e.note=note;
-    e.items=JSON.parse(JSON.stringify(items));
+    e.items=JSON.parse(JSON.stringify(dailySalesCart));
     e.totalAmount=totalAmount;
-    e.totalProfit=totalProfit;
   }else{
     const entry={
       id:'SB'+Date.now().toString().slice(-6),
       date,
       time:new Date().toTimeString().slice(0,5),
-      items:JSON.parse(JSON.stringify(items)),
-      totalAmount,totalProfit,note
+      items:JSON.parse(JSON.stringify(dailySalesCart)),
+      totalAmount,note
     };
     DB.dailySales.unshift(entry);
-    addPriceHistory('selling',entry.items.map(x=>({productId:x.productId,name:x.name,price:x.price,qty:x.qty})),date,entry.id,'dailySales');
+    addPriceHistory('selling',entry.items,date,entry.id,'dailySales');
   }
-
-  // Trừ kho
-  Object.keys(fifo.deductions).forEach(productId=>{
-    const p=DB.products.find(x=>x.id===productId);
-    if(p)p.stock-=fifo.deductions[productId];
-  });
-
   saveDB();
   closeModal();
-  toast(editId?'Đã cập nhật sổ bán hàng!':`Đã ghi sổ! Doanh thu: ${fmt(totalAmount)} | Lãi: ${fmt(totalProfit)}`);
+  toast(editId?'Đã cập nhật sổ bán hàng!':`Đã ghi sổ! ${fmt(totalAmount)}`);
   dailySalesDate=date;
   renderAdminDailySales(document.getElementById('admin-content'));
 }
@@ -2595,17 +2499,10 @@ function saveDailySales(editId){
 function showEditDailySales(id){showDailySalesForm(id);}
 
 function deleteDailySales(id){
-  if(!confirm('Xóa ghi chép bán hàng này? Kho hàng sẽ được restore.'))return;
-  const entry=DB.dailySales.find(x=>x.id===id);
-  if(entry){
-    (entry.items||[]).forEach(it=>{
-      const p=DB.products.find(x=>x.id===it.productId);
-      if(p)p.stock+=it.qty;
-    });
-  }
+  if(!confirm('Xóa ghi chép bán hàng này?'))return;
   DB.dailySales=DB.dailySales.filter(x=>x.id!==id);
   saveDB();
-  toast('Đã xóa ghi chép và restore kho hàng','warning');
+  toast('Đã xóa ghi chép','warning');
   renderDailySalesTable();
 }
 
