@@ -2496,8 +2496,6 @@ function dsPickProd(id){
   lots.sort((a,b)=>(a.importDate||'').localeCompare(b.importDate||''));
   const costEl=document.getElementById('ds-cost');
   if(costEl)costEl.value=lots.length?lots[0].cost:p.cost||'';
-  const pr=document.getElementById('ds-price');
-  if(pr)pr.value=p.units[0]?.price||p.price||'';
   const ac=document.getElementById('ds-ac');if(ac){ac.style.display='none';ac.innerHTML='';}
   const qty=document.getElementById('ds-qty');if(qty)qty.focus();
 }
