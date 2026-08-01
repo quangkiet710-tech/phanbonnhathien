@@ -786,7 +786,7 @@ function renderCustHome(c){
         <div class="sum-row"><span class="text-muted">Số điện thoại:</span><strong>${cu.phone}</strong></div>
         <div class="sum-row"><span class="text-muted">Hạng:</span><span class="badge ${cu.type==='VIP'?'badge-amber':cu.type==='Sỉ'?'badge-blue':'badge-gray'}">${cu.type}</span></div>
         <div class="sum-row"><span class="text-muted">Tổng chi tiêu:</span><strong class="text-green">${fmt(cu.totalBuy||0)}</strong></div>
-        ${cu.debt>0?`<div class="sum-row"><span class="text-muted">Còn nợ:</span><strong class="text-red">${fmt(cu.debt)}</strong></div>`:''}
+        ${cu.debt>0?`<div class="sum-row"><span class="text-muted">Còn nợ:</span><strong class="text-red">${fmtK(cu.debt)}</strong></div>`:''}
       </div>
     </div>
   </div>`;
@@ -798,7 +798,7 @@ function prodCardHTML(p){
     <div class="prod-card-img">${p.image?`<img src="${p.image}" style="width:100%;height:100%;object-fit:cover;border-radius:8px 8px 0 0"/>`:p.icon}</div>
     <div class="prod-card-body">
       <div class="prod-card-name">${p.name}</div>
-      <div class="prod-card-price">${fmt(baseUnit.price)}</div>
+      <div class="prod-card-price">${fmtK(baseUnit.price)}</div>
       <div class="prod-card-unit">/${baseUnit.name}</div>
     </div>
     <button class="prod-card-add" onclick="event.stopPropagation();quickAddToCart('${p.id}')">+</button>
@@ -854,7 +854,7 @@ function pickShopSearch(id){
 function showProdDetail(id){
   const p=DB.products.find(x=>x.id===id);if(!p)return;
   let selUnit=0;
-  const unitHTML=()=>p.units.map((u,i)=>`<button class="unit-btn ${selUnit===i?'active':''}" onclick="window._selUnit_${id}=${i};renderUnitSel('${id}')">${u.name} – ${fmt(u.price)}</button>`).join('');
+  const unitHTML=()=>p.units.map((u,i)=>`<button class="unit-btn ${selUnit===i?'active':''}" onclick="window._selUnit_${id}=${i};renderUnitSel('${id}')">${u.name} – ${fmtK(u.price)}</button>`).join('');
   window[`_selUnit_${id}`]=0;
   showModal(`<div class="modal">
     <div class="modal-header">
@@ -889,7 +889,7 @@ function showProdDetail(id){
   // Re-render unit buttons dynamically
   window[`renderUnitSel_${id}`]=()=>{
     const sel=window[`_selUnit_${id}`]||0;
-    document.getElementById(`unit-sel-${id}`).innerHTML=p.units.map((u,i)=>`<button class="unit-btn ${sel===i?'active':''}" onclick="window._selUnit_${id}=${i};window.renderUnitSel_${id}()">${u.name} – ${fmt(u.price)}</button>`).join('');
+    document.getElementById(`unit-sel-${id}`).innerHTML=p.units.map((u,i)=>`<button class="unit-btn ${sel===i?'active':''}" onclick="window._selUnit_${id}=${i};window.renderUnitSel_${id}()">${u.name} – ${fmtK(u.price)}</button>`).join('');
     document.getElementById(`unit-price-${id}`).textContent=fmt(p.units[sel].price);
   };
   // Patch button to call new render
@@ -946,7 +946,7 @@ function renderCustCart(c){
           <button class="btn btn-ghost btn-sm" style="color:var(--red);margin-left:4px" onclick="removeCartItem('${item.key}')">✕</button>
         </div>
       </div>
-      <div style="font-weight:900;font-size:14px;color:var(--g800);min-width:80px;text-align:right">${fmt(item.price*item.qty)}</div>
+      <div style="font-weight:900;font-size:14px;color:var(--g800);min-width:80px;text-align:right">${fmtK(item.price*item.qty)}</div>
     </div>`).join('')}
 
     <div class="card mt-12">
@@ -1068,7 +1068,7 @@ function renderCustOrders(c){
       </div>
       <div class="card-body">
         ${o.items.map(i=>`<div class="sum-row text-sm"><span>${i.icon||'📦'} ${i.name} (${i.unit}×${i.qty})</span><strong>${fmt(i.price*i.qty)}</strong></div>`).join('')}
-        <div class="sum-row sum-total" style="font-size:14px"><span>Tổng:</span><span>${fmt(o.total)}</span></div>
+        <div class="sum-row sum-total" style="font-size:14px"><span>Tổng:</span><span>${fmtK(o.total)}</span></div>
         ${o.note?`<div class="text-xs text-muted mt-8">📝 ${o.note}</div>`:''}
         <div class="text-xs text-muted mt-4">${o.payMode==='qr'?'💳 Chuyển khoản QR':'💵 Tiền mặt khi nhận'}</div>
       </div>
@@ -1092,7 +1092,7 @@ function renderCustAccount(c){
         <div class="sum-row"><span class="text-muted">⭐ Điểm tích lũy:</span><strong style="color:var(--amber)">${cu.points||0} điểm</strong></div>
         <div class="sum-row"><span class="text-muted">💰 Tổng chi tiêu:</span><strong class="text-green">${fmt(cu.totalBuy||0)}</strong></div>
         <div class="sum-row"><span class="text-muted">📋 Đơn hàng:</span><strong>${DB.custOrders.filter(o=>o.customerId===cu.id).length}</strong></div>
-        ${cu.debt>0?`<div class="sum-row"><span class="text-muted">💳 Còn nợ:</span><strong class="text-red">${fmt(cu.debt)}</strong></div>`:''}
+        ${cu.debt>0?`<div class="sum-row"><span class="text-muted">💳 Còn nợ:</span><strong class="text-red">${fmtK(cu.debt)}</strong></div>`:''}
       </div>
     </div>
     <div class="card mb-12">
@@ -1247,7 +1247,7 @@ function showPOSProdSelect(id){
       <div class="form-group mb-12">
         <label>Chọn đơn vị</label>
         <div class="unit-selector" id="pos-unit-sel">
-          ${p.units.map((u,i)=>`<button class="unit-btn ${i===0?'active':''}" onclick="posSelUnit=${i};renderPOSUnitSel('${id}')">${u.name} – ${fmt(u.price)}</button>`).join('')}
+          ${p.units.map((u,i)=>`<button class="unit-btn ${i===0?'active':''}" onclick="posSelUnit=${i};renderPOSUnitSel('${id}')">${u.name} – ${fmtK(u.price)}</button>`).join('')}
         </div>
       </div>
       <div class="form-group">
@@ -1266,7 +1266,7 @@ function showPOSProdSelect(id){
 function renderPOSUnitSel(id){
   const p=DB.products.find(x=>x.id===id);if(!p)return;
   const sel=window.posSelUnit||0;
-  document.getElementById('pos-unit-sel').innerHTML=p.units.map((u,i)=>`<button class="unit-btn ${i===sel?'active':''}" onclick="posSelUnit=${i};renderPOSUnitSel('${id}')">${u.name} – ${fmt(u.price)}</button>`).join('');
+  document.getElementById('pos-unit-sel').innerHTML=p.units.map((u,i)=>`<button class="unit-btn ${i===sel?'active':''}" onclick="posSelUnit=${i};renderPOSUnitSel('${id}')">${u.name} – ${fmtK(u.price)}</button>`).join('');
 }
 
 function posAddFromModal(id){
@@ -1306,7 +1306,7 @@ function renderPOSCart(){
         <div class="qty-val">${item.qty}</div>
         <button class="qty-btn" onclick="posChangeQty('${item.key}',1)">+</button>
       </div>
-      <div style="font-weight:800;font-size:13px;color:var(--g800);min-width:70px;text-align:right">${fmt(item.price*item.qty)}</div>
+      <div style="font-weight:800;font-size:13px;color:var(--g800);min-width:70px;text-align:right">${fmtK(item.price*item.qty)}</div>
       <button class="btn btn-ghost btn-sm" style="color:var(--red);padding:2px 4px" onclick="posRemove('${item.key}')">✕</button>
     </div>`).join('');
 
@@ -1483,9 +1483,9 @@ function renderAdminProductsTable(){
     <tr>
       <td>${idx}</td>
       <td><div style="font-weight:700;display:flex;align-items:center;gap:6px">${p.image?`<img src="${p.image}" style="width:30px;height:30px;object-fit:cover;border-radius:8px;flex-shrink:0"/>`:p.icon}<span>${p.name}</span></div><div class="text-xs text-muted">${p.sku} | ${p.cat}</div></td>
-      <td>${p.units.map(u=>`<span class="badge badge-gray" style="margin:1px">${u.name}: ${fmt(u.price)}</span>`).join('')}</td>
+      <td>${p.units.map(u=>`<span class="badge badge-gray" style="margin:1px">${u.name}: ${fmtK(u.price)}</span>`).join('')}</td>
       <td class="${p.stock<=p.minStock?'text-red font-bold':'text-green'}">${p.stock} ${p.stock<=p.minStock?'⚠️':''}</td>
-      <td>${fmt(p.cost)}</td>
+      <td>${fmtK(p.cost)}</td>
       <td><span class="badge ${p.stock<=p.minStock?'badge-red':'badge-green'}">${p.stock<=p.minStock?'Sắp hết':'Còn hàng'}</span></td>
       <td><div style="display:flex;gap:4px">
         <button class="btn btn-outline btn-sm" onclick="showEditProduct('${p.id}')">✏️</button>
@@ -2020,9 +2020,9 @@ function renderAdminSupplierDebts(c){
           const supEsc=g.supplier.replace(/\\/g,'\\\\').replace(/'/g,"\\'").replace(/"/g,'&quot;');
           return `<tr>
           <td><strong>${g.supplier}</strong><div class="text-xs text-muted">${g.count} phiếu nhập</div></td>
-          <td class="font-bold">${fmt(g.total)}</td>
-          <td class="text-green">${fmt(g.paid)}</td>
-          <td class="${g.debt>0?'text-red font-bold':''}">${g.debt>0?fmt(g.debt):'—'}</td>
+          <td class="font-bold">${fmtK(g.total)}</td>
+          <td class="text-green">${fmtK(g.paid)}</td>
+          <td class="${g.debt>0?'text-red font-bold':''}">${g.debt>0?fmtK(g.debt):'—'}</td>
           <td><div style="display:flex;gap:4px;align-items:center">${g.debt>0?`<button class="btn btn-green btn-sm" onclick="showPaySupplierDebt('${supEsc}')">💰 Thu nợ</button>`:'<span class="badge badge-green">✅ Hết nợ</span>'}<button class="btn btn-outline btn-sm" onclick="showEditSupplierPaid('${supEsc}')">✏️</button><button class="btn btn-red btn-sm" onclick="deleteSupplier('${supEsc}')">🗑</button></div></td>
         </tr>`;}).join('')||'<tr><td colspan="5" class="text-center text-muted" style="padding:24px">Chưa có phiếu nhập nào</td></tr>'}
         </tbody>
@@ -2051,11 +2051,11 @@ function showPaySupplierDebt(supplier){
   showModal(`<div class="modal">
     <div class="modal-header"><span>💰</span><h2>Thu nợ - ${supplier}</h2><button class="btn btn-ghost btn-icon" onclick="closeModal()">✕</button></div>
     <div class="modal-body">
-      <div class="alert alert-warn mb-12">Đang nợ: <strong>${fmt(g.debt)}</strong></div>
+      <div class="alert alert-warn mb-12">Đang nợ: <strong>${fmtK(g.debt)}</strong></div>
       <div class="form-group"><label>Số tiền trả *</label>
         <input class="form-control" type="text" inputmode="numeric" id="pay-sup-amount" placeholder="Nhập số tiền..." oninput="filterNumInput(this,false)"/>
       </div>
-      <button class="btn btn-outline btn-sm" onclick="document.getElementById('pay-sup-amount').value=${g.debt}">Trả hết ${fmt(g.debt)}</button>
+      <button class="btn btn-outline btn-sm" onclick="document.getElementById('pay-sup-amount').value=${g.debt}">Trả hết ${fmtK(g.debt)}</button>
     </div>
     <div class="modal-footer">
       <button class="btn btn-outline" onclick="closeModal()">Hủy</button>
@@ -2070,7 +2070,7 @@ function processPaySupplierDebt(supplier){
   const g=supplierDebtGroups().find(x=>x.supplier===supplier);
   if(!g){toast('Không tìm thấy NCC!','error');return;}
   if(amount<=0){toast('Nhập số tiền trả!','error');return;}
-  if(amount>g.debt){toast(`Số tiền vượt quá nợ hiện tại (${fmt(g.debt)})!`,'error');return;}
+  if(amount>g.debt){toast(`Số tiền vượt quá nợ hiện tại (${fmtK(g.debt)})!`,'error');return;}
   // Trừ nợ vào các phiếu nhập cũ nhất trước
   const imps=(DB.stockImports||[]).filter(i=>supKey(i)===supplier)
     .sort((a,b)=>(a.date||'').localeCompare(b.date||''));
@@ -2097,7 +2097,7 @@ function showEditSupplierPaid(supplier){
   showModal(`<div class="modal">
     <div class="modal-header"><span>✏️</span><h2>Sửa công nợ - ${supplier}</h2><button class="btn btn-ghost btn-icon" onclick="closeModal()">✕</button></div>
     <div class="modal-body">
-      <div class="alert alert-warn mb-12">Tổng nhập: <strong>${fmt(g.total)}</strong> &nbsp;|&nbsp; Đã trả: <strong>${fmt(g.paid)}</strong> &nbsp;|&nbsp; Còn nợ: <strong>${fmt(g.debt)}</strong></div>
+      <div class="alert alert-warn mb-12">Tổng nhập: <strong>${fmtK(g.total)}</strong> &nbsp;|&nbsp; Đã trả: <strong>${fmtK(g.paid)}</strong> &nbsp;|&nbsp; Còn nợ: <strong>${fmtK(g.debt)}</strong></div>
       <div class="form-group"><label>Tên nhà cung cấp *</label>
         <input class="form-control" id="esp-name" value="${supplier.replace(/"/g,'&quot;')}"/>
       </div>
@@ -2200,7 +2200,7 @@ function renderAdminCustomers(c){
           <td><span class="badge ${cu.type==='VIP'?'badge-amber':cu.type==='Sỉ'?'badge-blue':'badge-gray'}">${cu.type}</span></td>
           <td>⭐ ${cu.points||0}</td>
           <td class="text-green font-bold">${fmt(cu.totalBuy||0)}</td>
-          <td class="${cu.debt>0?'text-red font-bold':''}">${cu.debt>0?fmt(cu.debt):'—'}</td>
+          <td class="${cu.debt>0?'text-red font-bold':''}">${cu.debt>0?fmtK(cu.debt):'—'}</td>
           <td><div style="display:flex;gap:4px">
             <button class="btn btn-outline btn-sm" onclick="showEditCustomer('${cu.id}')">✏️</button>
             ${cu.debt>0?`<button class="btn btn-green btn-sm" onclick="showPayDebt('${cu.id}')">Thu nợ</button>`:''}
@@ -2261,7 +2261,7 @@ function saveEditCustomer(id){
 function deleteCustomer(id){
   const cu=DB.customers.find(x=>x.id===id);if(!cu)return;
   if(cu.debt>0){
-    if(!confirm(`Khách này còn nợ ${fmt(cu.debt)}, xóa sẽ mất thông tin nợ. Vẫn xóa?`))return;
+    if(!confirm(`Khách này còn nợ ${fmtK(cu.debt)}, xóa sẽ mất thông tin nợ. Vẫn xóa?`))return;
   }else{
     if(!confirm('Xóa khách hàng này?'))return;
   }
@@ -2287,7 +2287,7 @@ function renderAdminDebt(c){
         <tbody>${debtors.length?debtors.map(cu=>`<tr>
           <td><strong>${cu.name}</strong></td><td>${cu.phone}</td>
           <td><span class="badge ${cu.type==='VIP'?'badge-amber':cu.type==='Sỉ'?'badge-blue':'badge-gray'}">${cu.type}</span></td>
-          <td class="text-red font-bold" style="font-size:15px">${fmt(cu.debt)}</td>
+          <td class="text-red font-bold" style="font-size:15px">${fmtK(cu.debt)}</td>
           <td><button class="btn btn-green btn-sm" onclick="showPayDebt('${cu.id}')">💵 Thu nợ</button></td>
         </tr>`).join(''):'<tr><td colspan="5" class="text-center text-green" style="padding:32px">✅ Không có công nợ!</td></tr>'}
         </tbody>
@@ -2300,7 +2300,7 @@ function showPayDebt(id){
   showModal(`<div class="modal modal-sm">
     <div class="modal-header"><span>💵</span><h2>Thu nợ – ${cu.name}</h2><button class="btn btn-ghost btn-icon" onclick="closeModal()">✕</button></div>
     <div class="modal-body">
-      <div class="alert alert-warn mb-16">💳 Đang nợ: <strong>${fmt(cu.debt)}</strong></div>
+      <div class="alert alert-warn mb-16">💳 Đang nợ: <strong>${fmtK(cu.debt)}</strong></div>
       <div class="form-group"><label>Số tiền thu (đ)</label><input class="form-control" id="pay-amt" type="text" inputmode="numeric" value="${cu.debt}" oninput="filterNumInput(this,false)"/></div>
     </div>
     <div class="modal-footer"><button class="btn btn-outline" onclick="closeModal()">Hủy</button><button class="btn btn-green" onclick="processPayDebt('${id}')">✅ Xác nhận thu</button></div>
@@ -2754,7 +2754,7 @@ function renderPriceHistoryResults(){
           <td>${r.type==='cost'?'<span class="badge badge-amber">📥 Nhập</span>':'<span class="badge badge-green">💰 Bán</span>'}</td>
           <td>${fmtD(r.date)}</td>
           <td>${r.productName}</td>
-          <td class="font-bold">${fmt(r.price)}</td>
+          <td class="font-bold">${fmtK(r.price)}</td>
           <td>${r.qty}</td>
           <td class="text-muted text-xs"><code>${r.sourceId||'—'}</code></td>
         </tr>`).join('')||'<tr><td colspan="6" class="text-center text-muted" style="padding:24px">Chưa có dữ liệu — giá sẽ tự ghi khi nhập kho hoặc bán hàng</td></tr>'}
@@ -2831,7 +2831,7 @@ function renderAdminInvoices(c){
         <thead><tr><th>Mã đơn</th><th>Ngày</th><th>Khách</th><th>Tổng tiền</th><th>Thanh toán</th><th>Ghi chú</th><th></th></tr></thead>
         <tbody>${pending.map(o=>`<tr>
           <td><code style="color:var(--amber)">${o.id}</code></td><td>${fmtD(o.date)}</td><td>${o.customerName}</td>
-          <td class="font-bold text-green">${fmt(o.total)}</td>
+          <td class="font-bold text-green">${fmtK(o.total)}</td>
           <td>${o.payMode==='qr'?'💳 Chuyển khoản':'💵 Tiền mặt'}</td>
           <td style="max-width:120px;overflow:hidden;text-overflow:ellipsis">${o.note||'—'}</td>
           <td><div style="display:flex;gap:4px">
