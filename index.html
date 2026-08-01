@@ -2469,7 +2469,7 @@ function showDailySalesForm(editId){
         <div class="form-group ac-wrap" style="position:relative"><label>Khách hàng</label>
           <input class="form-control" id="ds-cust-inp" placeholder="Khách vãng lai" autocomplete="off"
             oninput="dsSearchCust(this.value)" onfocus="dsSearchCust(this.value)"
-            onblur="setTimeout(()=>{const a=document.getElementById('ds-cust-ac');if(a){a.style.display='none';a.innerHTML='';}},150)" value="${e?.customerName||''}"/>
+            onblur="setTimeout(()=>{const a=document.getElementById('ds-cust-ac');if(a){a.style.display='none';a.innerHTML='';}},150)" value="${e?.customerName||''}" data-cid="${e?.customerId||''}"/>
           <div id="ds-cust-ac" class="ac-dropdown"></div>
         </div>
         <div class="form-group"><label>Ghi chú</label><input class="form-control" id="ds-note" value="${(e?.note||'').replace(/"/g,'&quot;')}" placeholder="Ghi chú..."/></div>
