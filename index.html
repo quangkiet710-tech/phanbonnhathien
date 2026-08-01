@@ -2636,24 +2636,18 @@ function saveDailySales(editId){
       if(oldCust)oldCust.debt-=(e.totalAmount||0);
     }
     e.date=date;e.note=note;
-    e.customerName=custName;
+    e.customerId=custId;e.customerName=custName;
     e.items=JSON.parse(JSON.stringify(items));
     e.totalAmount=totalAmount;
     e.totalProfit=totalProfit;
-    // Auto-set customerId khi sửa
-    let newCustId=custId;
-    if(custName!=='khách vãng lai'){
-      let newCust=DB.customers.find(x=>x.id===custId);
-      if(!newCust&&custName){newCust=DB.customers.find(x=>x.name===custName);}
-      if(!newCust){
-        newCust={id:'CUS'+uid(),name:custName,phone:'',debt:0,revenue:0};
-        DB.customers.push(newCust);
+    // Cộng nợ cho khách hàng mới
+    if(custId){
+      const newCust=DB.customers.find(x=>x.id===custId);
+      if(newCust){
+        newCust.revenue=(newCust.revenue||0)+totalAmount;
+        newCust.debt=(newCust.debt||0)+totalAmount;
       }
-      newCustId=newCust.id;
-      newCust.revenue=(newCust.revenue||0)+totalAmount;
-      newCust.debt=(newCust.debt||0)+totalAmount;
     }
-    e.customerId=newCustId;
   }else{
     const entry={
       id:'SB'+Date.now().toString().slice(-6),
