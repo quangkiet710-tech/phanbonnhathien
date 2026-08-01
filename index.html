@@ -2188,7 +2188,7 @@ function deleteSupplier(supplier){
 /* ---- CUSTOMERS ---- */
 function showCustomerDetail(custId){
   const cu=DB.customers.find(x=>x.id===custId);if(!cu)return;
-  const sales=(DB.dailySales||[]).filter(s=>s.customerId===custId||s.customerName===cu.name);
+  const sales=(DB.dailySales||[]).filter(s=>(s.customerId===custId&&s.customerName===cu.name)||(!s.customerId&&s.customerName===cu.name));
   const totalBuy=sales.reduce((s,e)=>s+(e.totalAmount||0),0);
   const totalProfit=sales.reduce((s,e)=>s+e.items.reduce((ss,it)=>ss+(it.profit||0),0),0);
 
@@ -2225,7 +2225,7 @@ function showCustomerDetail(custId){
 
 function renderAdminCustomers(c){
   const custStats=cu=>{
-    const totalBuy=(DB.dailySales||[]).filter(s=>s.customerId===cu.id||s.customerName===cu.name).reduce((s,e)=>s+(e.totalAmount||0),0);
+    const totalBuy=(DB.dailySales||[]).filter(s=>(s.customerId===cu.id&&s.customerName===cu.name)||(!s.customerId&&s.customerName===cu.name)).reduce((s,e)=>s+(e.totalAmount||0),0);
     const rank=totalBuy>=10000000?'VIP':totalBuy>=5000000?'Silver':totalBuy>=1000000?'Bronze':'Regular';
     const debt=cu.debt||0;
     return {totalBuy,rank,debt};
