@@ -1699,7 +1699,7 @@ function renderAdminInventory(c){
       <div class="card-header">📋 Lịch sử nhập kho</div>
       <div class="tbl-wrap"><table>
         <thead><tr><th>Mã phiếu</th><th>Ngày</th><th>NCC</th><th>Sản phẩm</th><th>Tổng tiền</th><th>Thanh toán</th><th></th></tr></thead>
-        <tbody>${DB.stockImports.map(i=>`<tr><td><code>${i.id}</code></td><td>${fmtD(i.date)}</td><td>${i.supplier}</td><td>${i.items.map(x=>`${x.name}(${x.qty})`).join(', ')}</td><td><strong>${fmt(i.total)}</strong></td><td>${impDebt(i)>0?`<span class="badge badge-amber">Còn nợ ${fmt(impDebt(i))}</span>`:'<span class="badge badge-green">Đã TT</span>'}</td><td><button class="btn btn-outline btn-sm" onclick="showEditImport('${i.id}')">✏️</button></td></tr>`).join('')||'<tr><td colspan="7" class="text-center text-muted" style="padding:24px">Chưa có phiếu nhập</td></tr>'}
+        <tbody>${DB.stockImports.map(i=>`<tr><td><code>${i.id}</code></td><td>${fmtD(i.date)}</td><td>${i.supplier}</td><td>${i.items.map(x=>`${x.name}(${x.qty})`).join(', ')}</td><td><strong>${fmtK(i.total)}</strong></td><td>${impDebt(i)>0?`<span class="badge badge-amber">Còn nợ ${fmtK(impDebt(i))}</span>`:'<span class="badge badge-green">Đã TT</span>'}</td><td><button class="btn btn-outline btn-sm" onclick="showEditImport('${i.id}')">✏️</button></td></tr>`).join('')||'<tr><td colspan="7" class="text-center text-muted" style="padding:24px">Chưa có phiếu nhập</td></tr>'}
         </tbody>
       </table></div>
     </div>
@@ -1785,7 +1785,7 @@ function impRowBlur(i){
 function calcImpTotal(){
   const total=_impItems.reduce((s,i)=>s+(i.qty||0)*(i.cost||0),0);
   const el=document.getElementById('imp-total-display');
-  if(el)el.textContent=`Tổng: ${fmt(total)}`;
+  if(el)el.textContent=`Tổng: ${fmtK(total)}`;
 }
 function saveImport(){
   const sup=document.getElementById('imp-sup')?.value.trim();
