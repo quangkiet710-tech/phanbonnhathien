@@ -561,6 +561,7 @@ let DB=loadDB();
 // UTILS
 // ============================================================
 function fmt(n){return new Intl.NumberFormat('vi-VN').format(Math.round(n||0))+'đ';}
+function fmtK(n){const k=Math.round((n||0)/1000);return k+'k';}
 function fmtD(d){if(!d)return'';return new Date(d).toLocaleDateString('vi-VN');}
 function uid(){return Date.now().toString(36)+Math.random().toString(36).slice(2,5);}
 function today(){return new Date().toISOString().slice(0,10);}
@@ -1421,11 +1422,11 @@ function renderAdminDash(c){
     <div class="stat-grid">
       <div class="stat-card"><div class="s-icon-wrap">💰</div><div class="s-label">HĐ hôm nay</div><div class="s-val" style="font-size:17px;color:var(--g800)">${fmt(todayRev)}</div><div class="s-sub">${todayInvs.length} hóa đơn</div></div>
       <div class="stat-card"><div class="s-icon-wrap">📈</div><div class="s-label">Tổng DT</div><div class="s-val" style="font-size:17px">${fmt(totalRev)}</div><div class="s-sub">${DB.invoices.length} HĐ</div></div>
-      <div class="stat-card"><div class="s-icon-wrap">💳</div><div class="s-label">Công nợ</div><div class="s-val" style="font-size:17px;color:var(--red)">${fmt(totalDebt)}</div><div class="s-sub">${DB.customers.filter(c=>c.debt>0).length} khách</div></div>
+      <div class="stat-card"><div class="s-icon-wrap">💳</div><div class="s-label">Công nợ</div><div class="s-val" style="font-size:17px;color:var(--red)">${fmtK(totalDebt)}</div><div class="s-sub">${DB.customers.filter(c=>c.debt>0).length} khách</div></div>
       <div class="stat-card"><div class="s-icon-wrap">📦</div><div class="s-label">Đơn chờ</div><div class="s-val" style="color:${pendingOrders.length?'var(--amber)':'var(--g800)'}">${pendingOrders.length}</div><div class="s-sub">Cần xử lý</div></div>
-      <div class="stat-card"><div class="s-icon-wrap">📝</div><div class="s-label">Sổ hôm nay</div><div class="s-val" style="font-size:17px;color:var(--g800)">${fmt(totalDailyRevenue)}</div><div class="s-sub">${todayDailySales.length} ghi chép</div></div>
-      <div class="stat-card"><div class="s-icon-wrap">💹</div><div class="s-label">Lãi hôm nay</div><div class="s-val" style="font-size:17px;${todayDailyProfit>=0?'color:var(--g800)':'color:var(--red)'}">${todayDailyProfit>=0?'+':''} ${fmt(todayDailyProfit)}</div><div class="s-sub">Sổ bán hàng</div></div>
-      <div class="stat-card"><div class="s-icon-wrap">📊</div><div class="s-label">Tổng lãi</div><div class="s-val" style="font-size:17px;${totalDailyProfit>=0?'color:var(--g800)':'color:var(--red)'}">${totalDailyProfit>=0?'+':''} ${fmt(totalDailyProfit)}</div><div class="s-sub">Tất cả sổ</div></div>
+      <div class="stat-card"><div class="s-icon-wrap">📝</div><div class="s-label">Sổ hôm nay</div><div class="s-val" style="font-size:17px;color:var(--g800)">${fmtK(totalDailyRevenue)}</div><div class="s-sub">${todayDailySales.length} ghi chép</div></div>
+      <div class="stat-card"><div class="s-icon-wrap">💹</div><div class="s-label">Lãi hôm nay</div><div class="s-val" style="font-size:17px;${todayDailyProfit>=0?'color:var(--g800)':'color:var(--red)'}">${todayDailyProfit>=0?'+':''} ${fmtK(todayDailyProfit)}</div><div class="s-sub">Sổ bán hàng</div></div>
+      <div class="stat-card"><div class="s-icon-wrap">📊</div><div class="s-label">Tổng lãi</div><div class="s-val" style="font-size:17px;${totalDailyProfit>=0?'color:var(--g800)':'color:var(--red)'}">${totalDailyProfit>=0?'+':''} ${fmtK(totalDailyProfit)}</div><div class="s-sub">Tất cả sổ</div></div>
     </div>
 
     ${pendingOrders.length?`<div class="alert alert-warn mb-16">⚠️ Có <strong>${pendingOrders.length}</strong> đơn online chờ xử lý! <button class="btn btn-outline btn-sm" onclick="showAdminPage('invoices')">Xem ngay →</button></div>`:''}
@@ -2389,10 +2390,10 @@ function renderDailySalesTable(){
       ${i===0?`<td rowspan="${n}"><code>${e.time||e.id}</code></td><td rowspan="${n}"><strong>${e.customerName||'khách vãng lai'}</strong></td>`:''}
       <td>${it.icon||'📦'} ${it.name}</td>
       <td>${it.qty} ${it.unit||''}</td>
-      <td>${fmt(it.costPrice||0)}</td>
-      <td>${fmt(it.price)}</td>
-      <td class="font-bold">${fmt(it.qty*it.price)}</td>
-      <td class="${(it.profit||0)>=0?'text-green':'text-red'} font-bold">${(it.profit||0)>=0?'+':''} ${fmt(it.profit||0)}</td>
+      <td>${fmtK(it.costPrice||0)}</td>
+      <td>${fmtK(it.price)}</td>
+      <td class="font-bold">${fmtK(it.qty*it.price)}</td>
+      <td class="${(it.profit||0)>=0?'text-green':'text-red'} font-bold">${(it.profit||0)>=0?'+':''} ${fmtK(it.profit||0)}</td>
       ${i===0?`<td rowspan="${n}" style="max-width:140px;overflow:hidden;text-overflow:ellipsis">${e.note||'—'}</td>
       <td rowspan="${n}"><div style="display:flex;gap:4px">
         <button class="btn btn-outline btn-sm" onclick="showEditDailySales('${e.id}')">✏️</button>
@@ -2402,7 +2403,7 @@ function renderDailySalesTable(){
   }).join('');
   const total=entries.reduce((s,e)=>s+(e.totalAmount||0),0);
   const profit=entries.reduce((s,e)=>s+e.items.reduce((ss,it)=>ss+(it.profit||0),0),0);
-  foot.innerHTML=`<tr><td colspan="6" class="text-right font-bold">💰 Ngày ${fmtD(dailySalesDate)}:</td><td class="font-bold text-green">${fmt(total)}</td><td class="${profit>=0?'font-bold text-green':'font-bold text-red'}">${profit>=0?'+':''} ${fmt(profit)}</td><td colspan="2"></td></tr>`;
+  foot.innerHTML=`<tr><td colspan="6" class="text-right font-bold">💰 Ngày ${fmtD(dailySalesDate)}:</td><td class="font-bold text-green">${fmtK(total)}</td><td class="${profit>=0?'font-bold text-green':'font-bold text-red'}">${profit>=0?'+':''} ${fmtK(profit)}</td><td colspan="2"></td></tr>`;
 }
 
 function showDailySalesForm(editId){
@@ -2532,8 +2533,8 @@ function renderDailySalesItems(){
       <thead><tr><th>Sản phẩm</th><th>ĐVT</th><th>SL</th><th>Giá vốn</th><th>Đơn giá</th><th>Thành tiền</th><th>Lãi/Lỗ</th><th></th></tr></thead>
       <tbody>${dailySalesCart.map((it,i)=>`<tr>
         <td>${it.icon||'📦'} ${it.name}</td><td>${it.unit||'—'}</td><td>${it.qty}</td>
-        <td>${fmt(it.costPrice||0)}</td><td>${fmt(it.price)}</td><td class="font-bold">${fmt(it.qty*it.price)}</td>
-        <td class="${(it.profit||0)>=0?'text-green':'text-red'} font-bold">${(it.profit||0)>=0?'+':''} ${fmt(it.profit||0)}</td>
+        <td>${fmtK(it.costPrice||0)}</td><td>${fmtK(it.price)}</td><td class="font-bold">${fmtK(it.qty*it.price)}</td>
+        <td class="${(it.profit||0)>=0?'text-green':'text-red'} font-bold">${(it.profit||0)>=0?'+':''} ${fmtK(it.profit||0)}</td>
         <td><button class="btn btn-red btn-sm btn-icon" onclick="dailySalesCart.splice(${i},1);renderDailySalesItems()">✕</button></td>
       </tr>`).join('')}</tbody>
     </table></div>`;
@@ -2542,7 +2543,7 @@ function renderDailySalesItems(){
   const total=dailySalesCart.reduce((s,i)=>s+i.qty*i.price,0);
   const profit=dailySalesCart.reduce((s,i)=>s+(i.profit||0),0);
   const d=document.getElementById('ds-total-display');
-  if(d)d.textContent=`SL: ${totalQty} | Doanh thu: ${fmt(total)} | Lãi: ${fmt(profit)}`;
+  if(d)d.textContent=`SL: ${totalQty} | Doanh thu: ${fmtK(total)} | Lãi: ${fmtK(profit)}`;
 }
 
 function saveDailySales(editId){
