@@ -2380,6 +2380,10 @@ function calculateFIFOCost(items){
   lots.sort((a,b)=>(a.importDate||'').localeCompare(b.importDate||''));
 
   return items.map(it=>{
+    if(it.costPrice && it.costPrice > 0){
+      const profit=(it.price-it.costPrice)*it.qty;
+      return{...it,costPrice:it.costPrice,profit:Math.round(profit),profitMargin:it.price>0?((it.price-it.costPrice)/it.price*100).toFixed(1)+'%':'0%'};
+    }
     let remaining=it.qty;
     let totalCost=0;
     let costPrice=0;
