@@ -571,7 +571,12 @@ window.__syncGetDB=function(){return DB;};
 // UTILS
 // ============================================================
 function fmt(n){return new Intl.NumberFormat('vi-VN').format(Math.round(n||0))+'đ';}
-function fmtK(n){const k=Math.round((n||0)/1000);return k+'k';}
+// Hiển thị dạng "k". Giữ phần lẻ để không làm tròn sai (13500 -> 13,5k chứ không phải 14k)
+function fmtK(n){
+  const v=n||0,a=Math.abs(v);
+  const k=Math.round(a/1000*1000)/1000;
+  return (v<0?'-':'')+String(k).replace('.',',')+'k';
+}
 function fmtD(d){if(!d)return'';return new Date(d).toLocaleDateString('vi-VN');}
 function uid(){return Date.now().toString(36)+Math.random().toString(36).slice(2,5);}
 function today(){return new Date().toISOString().slice(0,10);}
