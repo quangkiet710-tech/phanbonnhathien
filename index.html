@@ -2701,7 +2701,7 @@ function saveDailySales(editId){
   if(!Array.isArray(DB.dailySales))DB.dailySales=[];
   const date=document.getElementById('ds-date')?.value;
   const custInp=document.getElementById('ds-cust-inp');
-  const custId=custInp?.dataset.cid||'';
+  let custId=custInp?.dataset.cid||'';   // gán lại ở cuối hàm khi tự tạo khách mới -> phải là let
   const custName=(custInp?.value||'').trim()||'khách vãng lai';
   const note=document.getElementById('ds-note')?.value.trim()||'';
   if(!date){toast('Chọn ngày bán!','error');return;}
