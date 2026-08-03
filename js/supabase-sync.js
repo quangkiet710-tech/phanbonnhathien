@@ -320,13 +320,20 @@
         applyToApp(merged);
       }
 
+      // CHỈ ghi lên cloud khi thật sự có gì khác. Ghi đè vô cớ làm dấu thời gian
+      // trên cloud nhảy mới liên tục, khiến thiết bị còn chạy bản cũ tưởng là có
+      // dữ liệu mới rồi tự ghi đè lên chính nó — đúng lỗi đã làm mất hoá đơn.
+      const needPush = !cloud || JSON.stringify(merged) !== JSON.stringify(cloud);
       const now = Date.now();
-      const { error: upErr } = await client.from(TABLE).upsert({
-        id: ROW_ID, data: merged, updated_at: new Date(now).toISOString()
-      });
-      if (upErr) throw upErr;
-
-      setMeta({ updatedAt: now, pushedAt: now, cloudSeen: now });
+      if (needPush) {
+        const { error: upErr } = await client.from(TABLE).upsert({
+          id: ROW_ID, data: merged, updated_at: new Date(now).toISOString()
+        });
+        if (upErr) throw upErr;
+        setMeta({ updatedAt: now, pushedAt: now, cloudSeen: now });
+      } else {
+        setMeta({ pushedAt: now, cloudSeen: now });
+      }
       setStatus('synced');
     } catch (e) {
       console.error('[sync] Đồng bộ thất bại:', e);
@@ -403,7 +410,7 @@
   });
 
   // Mở ra cho việc kiểm thử/gỡ lỗi (không dùng trong luồng chạy bình thường)
-  window.__syncInternals = { mergeDB, stampChanges, mergeTombstones, countRecords, isRiskyData, COLLECTIONS };
+  window.__syncInternals = { mergeDB, stampChanges, mergeTombstones, countRecords, isRiskyData, COLLECTIONS, syncNow };
 
   ensureIndicator();
   setStatus('syncing');
