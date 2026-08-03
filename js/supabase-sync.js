@@ -1,7 +1,12 @@
 // ============================================================
-// ĐỒNG BỘ DỮ LIỆU QUA SUPABASE (FIX: Thêm polling + sync on focus)
+// ĐỒNG BỘ DỮ LIỆU QUA SUPABASE — GỘP THEO TỪNG BẢN GHI
 // Bảng: pos_store (id text PK, data jsonb, updated_at timestamptz)
 // Chỉ dùng 1 dòng duy nhất id = 'nhathien-main'
+//
+// NGUYÊN TẮC: KHÔNG BAO GIỜ THAY NGUYÊN CỤC DỮ LIỆU.
+// Máy và cloud được HOÀ vào nhau theo từng bản ghi (id). Ghi chép có ở
+// một bên thì bên kia nhận thêm — không bên nào xoá được dữ liệu của bên kia.
+// Muốn xoá thật thì phải xoá trong app, lúc đó mới sinh "bia mộ" (tombstone).
 // ============================================================
 (function () {
   const SUPABASE_URL = 'https://yzmdxyxdzksleslwiyjg.supabase.co';
@@ -10,11 +15,15 @@
   const ROW_ID = 'nhathien-main';
   const LOCAL_KEY = 'agropos_v2';
   const META_KEY = 'agropos_v2_meta';
-  const DEBOUNCE_MS = 2000;
-  const POLL_INTERVAL = 1000; // 1 giây check cloud 1 lần
-  
-  // ID gốc trong dữ liệu mẫu (DEFAULT) của app — dùng để nhận diện dữ liệu
-  // "chưa từng được người dùng chỉnh sửa" nhằm tránh đè mất dữ liệu thật trên cloud.
+  const PREV_KEY = 'agropos_v2_prev';      // ảnh chụp lần lưu trước, dùng để biết bản ghi nào vừa đổi
+  const BACKUP_KEY = 'agropos_v2_backups'; // lưới an toàn: các bản sao gần đây
+  const DEBOUNCE_MS = 1500;
+  const POLL_INTERVAL = 15000;
+  const MAX_BACKUPS = 12;
+
+  // Các bảng dữ liệu dạng mảng có khoá 'id'
+  const COLLECTIONS = ['products', 'customers', 'invoices', 'stockImports', 'custOrders', 'dailySales', 'priceHistory'];
+
   const SEED_CUSTOMER_IDS = 'c1,c2,c3';
   const SEED_PRODUCT_IDS = 'p1,p2,p3,p4,p5,p6,p7,p8';
   const SEED_INVOICE_IDS = 'HD001,HD002,HD003';
@@ -25,8 +34,10 @@
   }
   const client = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
-  // ---------- chỉ báo trạng thái ----------
-  let indicatorEl = null;
+  // ---------------------------------------------------------
+  // Chỉ báo trạng thái — PHẢI NÓI THẬT
+  // ---------------------------------------------------------
+  let indicatorEl = null, lastError = '';
   function ensureIndicator() {
     if (indicatorEl) return indicatorEl;
     indicatorEl = document.createElement('div');
@@ -34,30 +45,40 @@
     indicatorEl.style.cssText =
       'position:fixed;bottom:8px;right:8px;z-index:99999;background:rgba(0,0,0,.68);' +
       'color:#fff;font-size:11px;line-height:1;padding:5px 9px;border-radius:14px;' +
-      'font-family:Arial,sans-serif;pointer-events:none;user-select:none;box-shadow:0 1px 4px rgba(0,0,0,.25)';
+      'font-family:Arial,sans-serif;cursor:pointer;user-select:none;box-shadow:0 1px 4px rgba(0,0,0,.25)';
+    indicatorEl.onclick = function () {
+      if (lastError) alert('Lỗi đồng bộ gần nhất:\n\n' + lastError + '\n\nDữ liệu vẫn được giữ trong máy. App sẽ tự thử lại.');
+      else alert('Đồng bộ bình thường.\nLần cuối lên cloud: ' + (getMeta().pushedAt ? new Date(getMeta().pushedAt).toLocaleString('vi-VN') : 'chưa lần nào'));
+    };
     document.body.appendChild(indicatorEl);
     return indicatorEl;
   }
-  function setStatus(state) {
+  function setStatus(state, err) {
     const el = ensureIndicator();
+    lastError = err || '';
     const label = {
       synced: '🟢 Đã đồng bộ',
       syncing: '🟡 Đang đồng bộ...',
-      offline: '🔴 Mất mạng'
+      offline: '🔴 Mất mạng — chưa lên cloud',
+      error: '🔴 LỖI: chưa lưu được lên cloud',
+      pending: '🟠 Có thay đổi chưa lên cloud'
     }[state] || '';
     el.textContent = label;
+    el.style.background = (state === 'error' || state === 'offline') ? 'rgba(190,20,20,.92)'
+      : (state === 'pending' ? 'rgba(200,110,0,.92)' : 'rgba(0,0,0,.68)');
   }
 
-  // ---------- meta cục bộ (thời điểm dữ liệu máy được cập nhật lần cuối) ----------
-  function getMeta() {
-    try { return JSON.parse(localStorage.getItem(META_KEY)) || {}; } catch (e) { return {}; }
-  }
-  function setMeta(m) { localStorage.setItem(META_KEY, JSON.stringify(m)); }
-  function markLocalChanged() { setMeta({ updatedAt: Date.now() }); }
+  // ---------------------------------------------------------
+  // Tiện ích
+  // ---------------------------------------------------------
+  function getMeta() { try { return JSON.parse(localStorage.getItem(META_KEY)) || {}; } catch (e) { return {}; } }
+  function setMeta(m) { try { localStorage.setItem(META_KEY, JSON.stringify(Object.assign(getMeta(), m))); } catch (e) {} }
+  function readLocal() { try { return JSON.parse(localStorage.getItem(LOCAL_KEY)); } catch (e) { return null; } }
+  function clone(o) { return JSON.parse(JSON.stringify(o)); }
+  // So sánh nội dung bản ghi, bỏ qua dấu thời gian nội bộ
+  function bodyOf(r) { const c = Object.assign({}, r); delete c._ts; return JSON.stringify(c); }
+  function isModalOpen() { return !!document.querySelector('.modal-overlay'); }
 
-  // ---------- nhận diện dữ liệu rỗng / còn nguyên dữ liệu mẫu ----------
-  // Mục đích: không bao giờ để một bản dữ liệu "trống" hoặc "chưa từng chỉnh sửa"
-  // (do lỗi tải, do máy mới, do localStorage bị xoá...) đè mất dữ liệu thật trên cloud.
   function looksEmpty(data) {
     if (!data || typeof data !== 'object') return true;
     const c = Array.isArray(data.customers) ? data.customers.length : 0;
@@ -73,195 +94,328 @@
       return cIds === SEED_CUSTOMER_IDS && pIds === SEED_PRODUCT_IDS && iIds === SEED_INVOICE_IDS;
     } catch (e) { return false; }
   }
-  function isRiskyLocalData(data) {
-    return looksEmpty(data) || looksLikeUntouchedSeed(data);
+  function isRiskyData(data) { return looksEmpty(data) || looksLikeUntouchedSeed(data); }
+
+  // Bỏ những bản ghi mang đúng id của dữ liệu mẫu mà cloud (dữ liệu thật) không có.
+  // Id thật của cửa hàng do app sinh ra (dạng 'pms...', 'CUS...') nên không đụng nhau.
+  const SEED_IDS = {
+    products: SEED_PRODUCT_IDS.split(','),
+    customers: SEED_CUSTOMER_IDS.split(','),
+    invoices: SEED_INVOICE_IDS.split(',')
+  };
+  function stripSeedRemnants(local, cloud) {
+    if (!local || !cloud) return local;
+    let changed = false;
+    const out = clone(local);
+    Object.keys(SEED_IDS).forEach(k => {
+      if (!Array.isArray(out[k])) return;
+      const cloudIds = {};
+      (Array.isArray(cloud[k]) ? cloud[k] : []).forEach(r => { if (r && r.id != null) cloudIds[r.id] = 1; });
+      const before = out[k].length;
+      out[k] = out[k].filter(r => !(r && SEED_IDS[k].indexOf(r.id) >= 0 && !cloudIds[r.id]));
+      if (out[k].length !== before) changed = true;
+    });
+    if (changed) console.warn('[sync] Đã loại bỏ tàn dư dữ liệu mẫu trước khi đồng bộ.');
+    return changed ? out : local;
   }
 
-  // ---------- đẩy dữ liệu lên Supabase (debounce) ----------
-  let pushTimer = null;
-  // Chờ lần tải-về-so-sánh đầu tiên xong mới cho phép đẩy lên, để không có
-  // trường hợp app vừa mở đã đẩy dữ liệu máy (có thể còn cũ/rỗng) đè lên cloud
-  // trước khi kịp biết cloud đang có gì.
-  let initialPullDone = false;
-  let pushPendingAfterPull = false;
-  function schedulePush() {
-    if (!initialPullDone) { pushPendingAfterPull = true; setStatus('syncing'); return; }
-    setStatus(navigator.onLine ? 'syncing' : 'offline');
-    if (pushTimer) clearTimeout(pushTimer);
-    pushTimer = setTimeout(pushNow, DEBOUNCE_MS);
+  // ---------------------------------------------------------
+  // LƯỚI AN TOÀN: sao lưu cục bộ trước mỗi lần dữ liệu bị thay đổi
+  // ---------------------------------------------------------
+  function pushBackup(data, reason) {
+    if (!data || isRiskyData(data)) return;
+    let list = [];
+    try { list = JSON.parse(localStorage.getItem(BACKUP_KEY)) || []; } catch (e) { list = []; }
+    const snap = JSON.stringify(data);
+    if (list.length && list[list.length - 1].snap === snap) return; // không lưu trùng
+    list.push({ at: Date.now(), reason: reason || '', snap: snap });
+    while (list.length > MAX_BACKUPS) list.shift();
+    for (;;) {
+      try { localStorage.setItem(BACKUP_KEY, JSON.stringify(list)); break; }
+      catch (e) { list.shift(); if (!list.length) break; } // hết chỗ thì bỏ bản cũ nhất
+    }
   }
-  async function pushNow() {
-    pushTimer = null;
+  window.__syncBackups = function () {
+    let list = [];
+    try { list = JSON.parse(localStorage.getItem(BACKUP_KEY)) || []; } catch (e) {}
+    return list.map((b, i) => {
+      let d = null; try { d = JSON.parse(b.snap); } catch (e) {}
+      return {
+        index: i, at: b.at, time: new Date(b.at).toLocaleString('vi-VN'), reason: b.reason,
+        dailySales: d && d.dailySales ? d.dailySales.length : 0,
+        customers: d && d.customers ? d.customers.length : 0,
+        products: d && d.products ? d.products.length : 0,
+        invoices: d && d.invoices ? d.invoices.length : 0
+      };
+    });
+  };
+  window.__syncBackupData = function (i) {
+    let list = [];
+    try { list = JSON.parse(localStorage.getItem(BACKUP_KEY)) || []; } catch (e) {}
+    if (!list[i]) return null;
+    try { return JSON.parse(list[i].snap); } catch (e) { return null; }
+  };
+
+  // ---------------------------------------------------------
+  // ĐÁNH DẤU THAY ĐỔI: bản ghi nào vừa sửa thì gắn _ts, bản ghi nào
+  // biến mất so với lần lưu trước thì ghi "bia mộ" để lần gộp sau biết
+  // đó là xoá thật, chứ không phải thiếu dữ liệu.
+  // ---------------------------------------------------------
+  function indexById(arr) {
+    const m = {};
+    (Array.isArray(arr) ? arr : []).forEach(r => { if (r && r.id != null) m[r.id] = r; });
+    return m;
+  }
+  function stampChanges(data) {
+    if (!data || typeof data !== 'object') return data;
+    let prev = null;
+    try { prev = JSON.parse(localStorage.getItem(PREV_KEY)); } catch (e) { prev = null; }
+    const now = Date.now();
+    data._deleted = data._deleted || {};
+    COLLECTIONS.forEach(k => {
+      const cur = Array.isArray(data[k]) ? data[k] : [];
+      const prevMap = prev ? indexById(prev[k]) : null;
+      cur.forEach(r => {
+        if (!r || typeof r !== 'object' || r.id == null) return;
+        const p = prevMap ? prevMap[r.id] : undefined;
+        if (!p) { if (!r._ts) r._ts = now; return; }          // bản ghi mới
+        if (bodyOf(p) !== bodyOf(r)) r._ts = now;             // bản ghi vừa sửa
+        else if (!r._ts) r._ts = p._ts || now;                // giữ nguyên dấu cũ
+      });
+      if (prevMap) {
+        const curIds = {};
+        cur.forEach(r => { if (r && r.id != null) curIds[r.id] = 1; });
+        Object.keys(prevMap).forEach(id => {
+          if (!curIds[id]) {
+            data._deleted[k] = data._deleted[k] || {};
+            data._deleted[k][id] = now;                        // xoá thật -> bia mộ
+          }
+        });
+      }
+    });
+    try { localStorage.setItem(PREV_KEY, JSON.stringify(data)); } catch (e) {}
+    return data;
+  }
+
+  // ---------------------------------------------------------
+  // GỘP: trái tim của bản vá. Không bên nào xoá được bản ghi của bên kia.
+  // ---------------------------------------------------------
+  function mergeTombstones(a, b) {
+    const out = {};
+    [a || {}, b || {}].forEach(src => {
+      Object.keys(src).forEach(k => {
+        out[k] = out[k] || {};
+        Object.keys(src[k] || {}).forEach(id => {
+          out[k][id] = Math.max(out[k][id] || 0, src[k][id] || 0);
+        });
+      });
+    });
+    return out;
+  }
+  // aTime/bTime: thời điểm của cả cục, chỉ dùng cho phần không có id (settings)
+  function mergeDB(a, b, aTime, bTime) {
+    if (!a) return b ? clone(b) : null;
+    if (!b) return clone(a);
+    const newer = (bTime > aTime) ? b : a;
+    const out = clone(newer);                      // settings & các field lẻ lấy theo bản mới hơn
+    const tomb = mergeTombstones(a._deleted, b._deleted);
+    out._deleted = tomb;
+
+    COLLECTIONS.forEach(k => {
+      const map = {};
+      [a, b].forEach(src => {
+        (Array.isArray(src[k]) ? src[k] : []).forEach(r => {
+          if (!r || typeof r !== 'object' || r.id == null) return;
+          const ex = map[r.id];
+          if (!ex || (r._ts || 0) > (ex._ts || 0)) map[r.id] = r;
+        });
+      });
+      const t = tomb[k] || {};
+      out[k] = Object.keys(map)
+        .map(id => map[id])
+        // chỉ loại bỏ bản ghi nếu nó bị xoá SAU lần sửa cuối cùng
+        .filter(r => !(t[r.id] != null && t[r.id] >= (r._ts || 0)));
+    });
+    return out;
+  }
+
+  function countRecords(d) {
+    let n = 0;
+    COLLECTIONS.forEach(k => { n += (Array.isArray(d && d[k]) ? d[k].length : 0); });
+    return n;
+  }
+
+  // ---------------------------------------------------------
+  // Áp dữ liệu đã gộp vào app đang chạy (không F5 đột ngột)
+  // ---------------------------------------------------------
+  let pendingApply = null;
+  function applyToApp(data) {
+    if (isModalOpen()) { pendingApply = data; return; } // đang nhập dở -> chờ
+    if (typeof window.__syncApplyDB === 'function') {
+      try { window.__syncApplyDB(data); return; } catch (e) { console.error('[sync] applyDB lỗi', e); }
+    }
+    location.reload();
+  }
+  setInterval(function () {
+    if (pendingApply && !isModalOpen()) { const d = pendingApply; pendingApply = null; applyToApp(d); }
+  }, 1200);
+
+  // ---------------------------------------------------------
+  // VÒNG ĐỒNG BỘ: tải về -> gộp -> lưu máy -> đẩy bản đã gộp lên
+  // ---------------------------------------------------------
+  let syncing = false, dirty = false, pushTimer = null;
+
+  async function syncNow(reason) {
+    if (syncing) { dirty = true; return; }
     if (!navigator.onLine) { setStatus('offline'); return; }
-    const raw = localStorage.getItem(LOCAL_KEY);
-    if (!raw) return;
-    let localData;
-    try { localData = JSON.parse(raw); } catch (e) { return; }
+    syncing = true;
+    setStatus('syncing');
+    try {
+      const local = readLocal();
 
-    if (isRiskyLocalData(localData)) {
-      // Dữ liệu máy trông như rỗng hoặc còn nguyên dữ liệu mẫu -> kiểm tra cloud
-      // trước, tuyệt đối không đè lên nếu cloud đang có dữ liệu thật.
-      try {
-        const { data: cloudRow, error } = await client.from(TABLE).select('data').eq('id', ROW_ID).maybeSingle();
-        if (error) throw error;
-        if (cloudRow && cloudRow.data && !isRiskyLocalData(cloudRow.data)) {
-          console.warn('[sync] Bỏ qua đẩy dữ liệu lên cloud vì dữ liệu máy trông rỗng/mặc định trong khi cloud đang có dữ liệu thật.');
-          setStatus('synced');
-          return;
-        }
-      } catch (e) {
-        // Không xác nhận được cloud đang có gì -> khi nghi ngờ, không đẩy lên.
-        console.warn('[sync] Không kiểm tra được dữ liệu cloud, tạm hoãn đẩy dữ liệu nghi ngờ.', e);
-        setStatus(navigator.onLine ? 'synced' : 'offline');
+      const { data: row, error } = await client
+        .from(TABLE).select('data, updated_at').eq('id', ROW_ID).maybeSingle();
+      if (error) throw error;
+
+      const localTime = getMeta().updatedAt || 0;
+      const cloud = row && row.data ? row.data : null;
+      const cloudTime = row && row.updated_at ? new Date(row.updated_at).getTime() : 0;
+      const cloudReal = !!cloud && !isRiskyData(cloud);
+
+      if (!local && !cloudReal) { setStatus('synced'); return; }
+
+      // CHỐT CHẶN: máy đang rỗng hoặc còn nguyên dữ liệu mẫu (máy mới, vừa xoá
+      // localStorage, tải hụt...) mà cloud đang có dữ liệu thật -> chỉ nhận về,
+      // TUYỆT ĐỐI không gộp và không đẩy lên, kẻo dữ liệu mẫu chui vào dữ liệu thật.
+      if (cloudReal && isRiskyData(local)) {
+        localStorage.setItem(LOCAL_KEY, JSON.stringify(cloud));
+        try { localStorage.setItem(PREV_KEY, JSON.stringify(cloud)); } catch (e) {}
+        setMeta({ updatedAt: cloudTime, pushedAt: cloudTime });
+        applyToApp(cloud);
+        setStatus('synced');
         return;
       }
-    }
 
-    const meta = getMeta();
-    const updatedAt = meta.updatedAt || Date.now();
-    setStatus('syncing');
-    try {
-      const { error } = await client.from(TABLE).upsert({
-        id: ROW_ID,
-        data: localData,
-        updated_at: new Date(updatedAt).toISOString()
+      if (!local) { setStatus('synced'); return; }
+
+      // Dọn tàn dư dữ liệu mẫu: máy mới vừa kịp nhập vài thứ trước khi đồng bộ
+      // xong thì vẫn còn lẫn sản phẩm/khách mẫu — không được để chúng lên cloud.
+      const work = cloudReal ? stripSeedRemnants(local, cloud) : local;
+
+      let merged = cloudReal ? mergeDB(work, cloud, localTime, cloudTime) : work;
+
+      // Bảo hiểm cuối: sau khi gộp mà số bản ghi lại ÍT hơn bản trong máy
+      // thì có gì đó sai -> giữ nguyên bản máy, báo lỗi, không đụng vào.
+      if (countRecords(merged) < countRecords(work)) {
+        console.error('[sync] Gộp cho ra ít dữ liệu hơn bản trong máy — huỷ gộp để an toàn.');
+        pushBackup(local, 'huỷ gộp bất thường');
+        merged = work;
+      }
+
+      const changedLocally = JSON.stringify(merged) !== JSON.stringify(local);
+      if (changedLocally) {
+        pushBackup(local, 'trước khi nhận dữ liệu từ cloud');
+        localStorage.setItem(LOCAL_KEY, JSON.stringify(merged));
+        try { localStorage.setItem(PREV_KEY, JSON.stringify(merged)); } catch (e) {}
+        applyToApp(merged);
+      }
+
+      const now = Date.now();
+      const { error: upErr } = await client.from(TABLE).upsert({
+        id: ROW_ID, data: merged, updated_at: new Date(now).toISOString()
       });
-      if (error) throw error;
+      if (upErr) throw upErr;
+
+      setMeta({ updatedAt: now, pushedAt: now, cloudSeen: now });
       setStatus('synced');
     } catch (e) {
-      console.error('[sync] Đẩy dữ liệu lên Supabase thất bại:', e);
-      setStatus(navigator.onLine ? 'synced' : 'offline');
+      console.error('[sync] Đồng bộ thất bại:', e);
+      setStatus(navigator.onLine ? 'error' : 'offline', (e && (e.message || e.error_description)) || String(e));
+      setTimeout(() => { dirty = true; }, 0);   // để vòng sau thử lại
+    } finally {
+      syncing = false;
+      if (dirty) { dirty = false; setTimeout(() => syncNow('thử lại'), 3000); }
     }
   }
 
-  // ---------- tải dữ liệu từ Supabase khi mở app ----------
-  function finishInitialPull() {
-    initialPullDone = true;
-    if (pushPendingAfterPull) {
-      pushPendingAfterPull = false;
-      schedulePush();
-    }
-  }
-  async function pullAndMaybeReload() {
-    if (!navigator.onLine) { setStatus('offline'); finishInitialPull(); return; }
-    setStatus('syncing');
-    try {
-      const { data, error } = await client
-        .from(TABLE)
-        .select('data, updated_at')
-        .eq('id', ROW_ID)
-        .maybeSingle();
-      if (error) throw error;
-      if (data && data.updated_at) {
-        const cloudTime = new Date(data.updated_at).getTime();
-        const localTime = getMeta().updatedAt || 0;
-        const localRaw = localStorage.getItem(LOCAL_KEY);
-        let localData = null;
-        try { localData = localRaw ? JSON.parse(localRaw) : null; } catch (e) { localData = null; }
-
-        // Cloud có dữ liệu thật, máy trống/mặc định hoặc chưa từng đồng bộ -> luôn ưu tiên cloud.
-        const shouldPreferCloud =
-          !isRiskyLocalData(data.data) &&
-          (isRiskyLocalData(localData) || cloudTime > localTime);
-
-        if (shouldPreferCloud) {
-          localStorage.setItem(LOCAL_KEY, JSON.stringify(data.data));
-          setMeta({ updatedAt: cloudTime });
-          location.reload();
-          return;
-        }
-      }
-      setStatus('synced');
-    } catch (e) {
-      console.error('[sync] Tải dữ liệu từ Supabase thất bại:', e);
-      setStatus(navigator.onLine ? 'synced' : 'offline');
-    }
-    finishInitialPull();
+  function schedulePush() {
+    setStatus(navigator.onLine ? 'pending' : 'offline');
+    if (pushTimer) clearTimeout(pushTimer);
+    pushTimer = setTimeout(() => syncNow('có thay đổi'), DEBOUNCE_MS);
   }
 
-  // ---------- [NEW] Polling: kiểm tra cloud định kỳ ----------
-  let pollTimer = null;
-  async function pollCloud() {
-    if (!navigator.onLine || !initialPullDone) return;
-    try {
-      const { data, error } = await client
-        .from(TABLE)
-        .select('data, updated_at')
-        .eq('id', ROW_ID)
-        .maybeSingle();
-      if (error) throw error;
-      if (data && data.updated_at) {
-        const cloudTime = new Date(data.updated_at).getTime();
-        const localTime = getMeta().updatedAt || 0;
-        
-        // Nếu cloud mới hơn máy -> tải về và reload
-        if (cloudTime > localTime && !isRiskyLocalData(data.data)) {
-          console.log('[sync] Phát hiện dữ liệu cloud mới hơn, đang tải về...');
-          localStorage.setItem(LOCAL_KEY, JSON.stringify(data.data));
-          setMeta({ updatedAt: cloudTime });
-          location.reload();
-        }
-      }
-    } catch (e) {
-      console.error('[sync] Polling cloud thất bại:', e);
-    }
-  }
-  function startPolling() {
-    if (pollTimer) clearInterval(pollTimer);
-    pollTimer = setInterval(pollCloud, POLL_INTERVAL);
-  }
-  function stopPolling() {
-    if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
-  }
-
-  // ---------- [NEW] Sync on focus: khi quay lại app/tab ----------
-  document.addEventListener('visibilitychange', () => {
-    if (document.hidden) {
-      stopPolling();
-    } else {
-      // Quay lại app/tab -> kiểm tra cloud ngay
-      console.log('[sync] Quay lại app, kiểm tra cloud...');
-      if (initialPullDone) pollCloud();
-      startPolling();
-    }
-  });
-
-  // ---------- [NEW] Sync giữa các tabs ----------
-  window.addEventListener('storage', (event) => {
-    if (event.key === LOCAL_KEY && event.newValue && event.oldValue !== event.newValue) {
-      console.log('[sync] Phát hiện thay đổi từ tab khác, đang reload...');
-      location.reload();
-    }
-  });
-
-  // ---------- gắn vào saveDB() của app ----------
+  // ---------------------------------------------------------
+  // Gắn vào saveDB() của app
+  // ---------------------------------------------------------
   function hookSaveDB() {
     if (typeof window.saveDB !== 'function') { setTimeout(hookSaveDB, 200); return; }
     const originalSaveDB = window.saveDB;
     window.saveDB = function () {
       originalSaveDB.apply(this, arguments);
-      markLocalChanged();
+      try {
+        const d = readLocal();
+        if (d) {
+          stampChanges(d);
+          localStorage.setItem(LOCAL_KEY, JSON.stringify(d));
+          pushBackup(d, 'sau khi lưu');
+        }
+      } catch (e) { console.error('[sync] stamp lỗi', e); }
+      setMeta({ updatedAt: Date.now() });
       schedulePush();
     };
   }
 
-  // ---------- trạng thái mạng ----------
-  window.addEventListener('online', () => { 
-    console.log('[sync] Quay lại online');
-    setStatus('syncing'); 
-    if (initialPullDone) { pushNow(); pollCloud(); }
+  // ---------------------------------------------------------
+  // Định kỳ + khi quay lại app + khi có mạng lại
+  // ---------------------------------------------------------
+  let pollTimer = null;
+  // Chỉ hỏi mốc thời gian (vài chục byte), có thay đổi thật mới tải cả cục về.
+  // Trước đây mỗi lần dò là tải nguyên 111 KB — rất tốn 4G ngoài cửa hàng.
+  async function pollLight() {
+    if (!navigator.onLine || syncing || isModalOpen()) return;
+    try {
+      const { data, error } = await client
+        .from(TABLE).select('updated_at').eq('id', ROW_ID).maybeSingle();
+      if (error) throw error;
+      const t = data && data.updated_at ? new Date(data.updated_at).getTime() : 0;
+      if (t > (getMeta().cloudSeen || 0)) syncNow('cloud có thay đổi');
+    } catch (e) {
+      console.warn('[sync] Dò cloud thất bại, sẽ thử lại:', e && e.message);
+    }
+  }
+  function startPolling() {
+    if (pollTimer) clearInterval(pollTimer);
+    pollTimer = setInterval(pollLight, POLL_INTERVAL);
+  }
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden && !isModalOpen()) syncNow('quay lại app');
   });
-  window.addEventListener('offline', () => { 
-    console.log('[sync] Mất mạng');
-    setStatus('offline');
-    stopPolling();
+  window.addEventListener('online', () => syncNow('có mạng lại'));
+  window.addEventListener('offline', () => setStatus('offline'));
+
+  // Cảnh báo nếu đóng app khi còn thay đổi chưa lên cloud
+  window.addEventListener('beforeunload', function (e) {
+    const m = getMeta();
+    if (m.updatedAt && (!m.pushedAt || m.pushedAt < m.updatedAt)) {
+      e.preventDefault(); e.returnValue = '';
+      return '';
+    }
   });
 
+  // Mở ra cho việc kiểm thử/gỡ lỗi (không dùng trong luồng chạy bình thường)
+  window.__syncInternals = { mergeDB, stampChanges, mergeTombstones, countRecords, isRiskyData, COLLECTIONS };
+
   ensureIndicator();
+  setStatus('syncing');
   hookSaveDB();
-  pullAndMaybeReload();
-  // Bắt đầu polling sau khi initial pull xong
-  setTimeout(() => {
-    if (initialPullDone) startPolling();
-  }, 1000);
+  // Lần chạy đầu: chụp ảnh gốc để lần sau biết cái gì đã đổi
+  try {
+    const first = readLocal();
+    if (first) {
+      pushBackup(first, 'khi mở app');
+      if (!localStorage.getItem(PREV_KEY)) localStorage.setItem(PREV_KEY, JSON.stringify(first));
+    }
+  } catch (e) {}
+  syncNow('mở app');
+  startPolling();
 })();

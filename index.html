@@ -557,6 +557,16 @@ function loadDB(){try{const r=localStorage.getItem(KEY);if(r)return JSON.parse(r
 function saveDB(){localStorage.setItem(KEY,JSON.stringify(DB));}
 let DB=loadDB();
 
+// Móc nối cho js/supabase-sync.js: nhận dữ liệu đã GỘP từ thiết bị khác mà
+// không cần F5 đột ngột (F5 giữa chừng là nguyên nhân làm mất phần đang nhập).
+window.__syncApplyDB=function(data){
+  if(!data||typeof data!=='object')return;
+  DB=data;
+  try{if(typeof adminPage!=='undefined'&&document.getElementById('admin-content'))showAdminPage(adminPage);}catch(e){}
+  try{toast('Đã nhận dữ liệu mới từ thiết bị khác','info');}catch(e){}
+};
+window.__syncGetDB=function(){return DB;};
+
 // ============================================================
 // UTILS
 // ============================================================
@@ -3119,11 +3129,117 @@ function renderAdminSettings(c){
         </div>
       </div>
     </div>
+    <div class="card mb-16" style="max-width:600px">
+      <div class="card-header">🛟 Sao lưu &amp; khôi phục</div>
+      <div class="card-body">
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">
+          <button class="btn btn-outline btn-sm" onclick="exportBackupFile()">📤 Tải file sao lưu về máy</button>
+          <button class="btn btn-outline btn-sm" onclick="document.getElementById('backup-file-inp').click()">📥 Phục hồi từ file</button>
+          <input type="file" id="backup-file-inp" accept=".json,application/json" style="display:none" onchange="importBackupFile(this)"/>
+        </div>
+        <div class="text-muted" style="font-size:12px;margin-bottom:10px">
+          App tự giữ lại các bản sao gần đây ngay trong máy. Nếu thấy thiếu dữ liệu, chọn một bản bên dưới rồi bấm "Lấy lại phần thiếu" — thao tác này chỉ <strong>thêm vào</strong>, không xoá gì của bản hiện tại.
+        </div>
+        <div id="backup-list"></div>
+      </div>
+    </div>
     <div style="display:flex;gap:8px">
       <button class="btn btn-green btn-lg" onclick="saveSettings()">💾 Lưu tất cả</button>
-      <button class="btn btn-red" onclick="if(confirm('Reset toàn bộ dữ liệu?')){localStorage.removeItem('${KEY}');DB=loadDB();saveDB();toast('Đã reset!','warning');renderAdminSettings(document.getElementById('admin-content'))}">🗑 Reset dữ liệu</button>
+      <button class="btn btn-red" onclick="resetAllData()">🗑 Reset dữ liệu</button>
     </div>
   </div>`;
+  renderBackupList();
+}
+
+/* ---- SAO LƯU & KHÔI PHỤC ---- */
+const BACKUP_COLLECTIONS=['products','customers','invoices','stockImports','custOrders','dailySales','priceHistory'];
+
+function renderBackupList(){
+  const el=document.getElementById('backup-list');if(!el)return;
+  const list=(typeof window.__syncBackups==='function')?window.__syncBackups():[];
+  if(!list.length){el.innerHTML='<div class="text-muted" style="font-size:12px">Chưa có bản sao nào (bản sao đầu tiên được tạo ngay khi mở app).</div>';return;}
+  el.innerHTML=`<div class="tbl-wrap"><table>
+    <thead><tr><th>Thời điểm</th><th>Sổ bán</th><th>Khách</th><th>SP</th><th></th></tr></thead>
+    <tbody>${list.slice().reverse().map(b=>`<tr>
+      <td style="font-size:12px">${b.time}<div class="text-muted" style="font-size:10px">${b.reason||''}</div></td>
+      <td>${b.dailySales}</td><td>${b.customers}</td><td>${b.products}</td>
+      <td><button class="btn btn-outline btn-sm" onclick="restoreFromBackup(${b.index})">Lấy lại phần thiếu</button></td>
+    </tr>`).join('')}</tbody></table></div>`;
+}
+
+// Chỉ THÊM những bản ghi hiện đang thiếu. Không đụng tới bản ghi đang có.
+function mergeMissingInto(target,source){
+  let added=0;const detail={};
+  BACKUP_COLLECTIONS.forEach(k=>{
+    if(!Array.isArray(source[k]))return;
+    if(!Array.isArray(target[k]))target[k]=[];
+    const have={};target[k].forEach(r=>{if(r&&r.id!=null)have[r.id]=1;});
+    source[k].forEach(r=>{
+      if(!r||r.id==null||have[r.id])return;
+      const copy=JSON.parse(JSON.stringify(r));
+      copy._ts=Date.now();
+      target[k].push(copy);
+      // bản ghi được lấy lại thì xoá "bia mộ" cũ, nếu không lần đồng bộ sau nó lại biến mất
+      if(target._deleted&&target._deleted[k])delete target._deleted[k][r.id];
+      added++;detail[k]=(detail[k]||0)+1;
+    });
+  });
+  return{added,detail};
+}
+
+function restoreFromBackup(i){
+  const src=(typeof window.__syncBackupData==='function')?window.__syncBackupData(i):null;
+  if(!src){toast('Không đọc được bản sao này','error');return;}
+  const preview=mergeMissingInto(JSON.parse(JSON.stringify(DB)),src);
+  if(!preview.added){toast('Bản sao này không có gì mà dữ liệu hiện tại đang thiếu','info');return;}
+  const lines=Object.keys(preview.detail).map(k=>`  • ${k}: ${preview.detail[k]}`).join('\n');
+  if(!confirm(`Sẽ THÊM ${preview.added} bản ghi đang thiếu:\n\n${lines}\n\nKhông có gì bị xoá hay ghi đè. Tiếp tục?`))return;
+  const r=mergeMissingInto(DB,src);
+  saveDB();
+  toast(`Đã lấy lại ${r.added} bản ghi`,'success');
+  renderAdminSettings(document.getElementById('admin-content'));
+}
+
+function exportBackupFile(){
+  const blob=new Blob([JSON.stringify(DB,null,2)],{type:'application/json'});
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(blob);
+  a.download=`sao-luu-phanbon-${today()}-${new Date().toTimeString().slice(0,5).replace(':','h')}.json`;
+  a.click();
+  setTimeout(()=>URL.revokeObjectURL(a.href),1000);
+  toast('Đã tải file sao lưu','success');
+}
+
+function importBackupFile(input){
+  const f=input.files&&input.files[0];if(!f)return;
+  const rd=new FileReader();
+  rd.onload=()=>{
+    let src=null;
+    try{src=JSON.parse(rd.result);}catch(e){toast('File không hợp lệ','error');return;}
+    if(!src||typeof src!=='object'){toast('File không hợp lệ','error');return;}
+    const preview=mergeMissingInto(JSON.parse(JSON.stringify(DB)),src);
+    if(!preview.added){toast('File này không có gì mà dữ liệu hiện tại đang thiếu','info');return;}
+    const lines=Object.keys(preview.detail).map(k=>`  • ${k}: ${preview.detail[k]}`).join('\n');
+    if(!confirm(`Sẽ THÊM ${preview.added} bản ghi đang thiếu:\n\n${lines}\n\nKhông có gì bị xoá hay ghi đè. Tiếp tục?`))return;
+    const r=mergeMissingInto(DB,src);
+    saveDB();
+    toast(`Đã lấy lại ${r.added} bản ghi`,'success');
+    renderAdminSettings(document.getElementById('admin-content'));
+  };
+  rd.readAsText(f);
+  input.value='';
+}
+
+// Reset là thao tác không lấy lại được -> bắt gõ xác nhận, và ép tải file sao lưu trước
+function resetAllData(){
+  if(!confirm('CẢNH BÁO: thao tác này xoá toàn bộ dữ liệu trong máy.\n\nBấm OK để tải file sao lưu trước đã.'))return;
+  exportBackupFile();
+  const t=prompt('Đã lưu file sao lưu chưa? Nếu chắc chắn muốn xoá sạch, gõ đúng chữ:  XOA HET');
+  if(t!=='XOA HET'){toast('Đã huỷ, dữ liệu còn nguyên','info');return;}
+  localStorage.removeItem(KEY);
+  DB=loadDB();saveDB();
+  toast('Đã reset','warning');
+  renderAdminSettings(document.getElementById('admin-content'));
 }
 function previewQR(){
   const bank=document.getElementById('s-bank').value;
