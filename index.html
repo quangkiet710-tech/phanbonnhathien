@@ -1408,9 +1408,9 @@ function renderAdminDash(c){
   const pendingOrders=DB.custOrders.filter(o=>o.status==='pending');
   const today_=today();
   const todayDailySales=(DB.dailySales||[]).filter(s=>s.date===today_);
-  const todayDailyProfit=todayDailySales.reduce((s,e)=>s+e.items.reduce((ss,it)=>ss+(it.profit||0),0),0);
+  const todayDailyProfit=todayDailySales.reduce((s,e)=>s+sumProfit(e.items),0);
   const totalDailyRevenue=todayDailySales.reduce((s,e)=>s+(e.totalAmount||0),0);
-  const totalDailyProfit=(DB.dailySales||[]).reduce((s,e)=>s+e.items.reduce((ss,it)=>ss+(it.profit||0),0),0);
+  const totalDailyProfit=(DB.dailySales||[]).reduce((s,e)=>s+sumProfit(e.items),0);
 
   const months=['T1','T2','T3','T4','T5','T6','T7','T8','T9','T10','T11','T12'];
   const mData=months.map((_,mi)=>DB.invoices.filter(i=>new Date(i.date).getMonth()===mi).reduce((s,i)=>s+i.paid,0));
@@ -2190,7 +2190,7 @@ function showCustomerDetail(custId){
   const cu=DB.customers.find(x=>x.id===custId);if(!cu)return;
   const sales=(DB.dailySales||[]).filter(s=>(s.customerId===custId&&s.customerName===cu.name)||(!s.customerId&&s.customerName===cu.name));
   const totalBuy=sales.reduce((s,e)=>s+(e.totalAmount||0),0);
-  const totalProfit=sales.reduce((s,e)=>s+e.items.reduce((ss,it)=>ss+(it.profit||0),0),0);
+  const totalProfit=sales.reduce((s,e)=>s+sumProfit(e.items),0);
 
   showModal(`<div class="modal modal-lg">
     <div class="modal-header"><span>👤</span><h2>${cu.name} - Chi tiết</h2><button class="btn btn-ghost btn-icon" onclick="closeModal()">✕</button></div>
@@ -2206,14 +2206,7 @@ function showCustomerDetail(custId){
             <tr style="border-top:1px solid #ddd;font-size:12px">
               <td colspan="6" style="padding:8px;background:#f5f5f5;font-weight:600">${s.date} (${s.time})</td>
             </tr>
-            ${s.items.map(it=>`<tr>
-              <td></td>
-              <td>${it.icon||'📦'} ${it.name}</td>
-              <td>${it.qty} ${it.unit||''}</td>
-              <td>${fmtK(it.price)}</td>
-              <td class="font-bold">${fmtK(it.qty*it.price)}</td>
-              <td class="${(it.profit||0)>=0?'text-green':'text-red'} font-bold">${(it.profit||0)>=0?'+':''} ${fmtK(it.profit||0)}</td>
-            </tr>`).join('')}
+            ${s.items.map(it=>`<tr><td></td><td>${it.icon||'📦'} ${it.name}</td><td>${it.qty} ${it.unit||''}</td><td>${fmtK(it.price)}</td><td class="font-bold">${fmtK(it.qty*it.price)}</td>${profitCell(it)}</tr>`).join('')}
           `).join(''):'<tr><td colspan="6" class="text-center text-muted" style="padding:20px">Chưa có ghi chép nào</td></tr>'}
           </tbody>
         </table></div>
@@ -2370,6 +2363,33 @@ let dailySalesCart=[];
 let dailySalesDate=today();
 
 // FIFO logic: tính giá vốn từ lô nhập cũ nhất (KHÔNG trừ kho - chỉ ghi nhận bán)
+// Trả về null nếu không đủ dữ liệu để biết giá vốn (chưa có phiếu nhập nào)
+function getProductCostPrice(productId,qty){
+  const lots=[];
+  (DB.stockImports||[]).forEach(imp=>{(imp.items||[]).forEach(item=>{if(item.productId===productId)lots.push({cost:item.cost,qty:item.qty,importDate:imp.date});});});
+  if(!lots.length||qty<=0)return null;
+  lots.sort((a,b)=>(a.importDate||'').localeCompare(b.importDate||''));
+  let remaining=qty,totalCost=0;
+  for(const lot of lots){if(remaining<=0)break;const take=Math.min(remaining,lot.qty);totalCost+=take*lot.cost;remaining-=take;}
+  return Math.round(totalCost/qty);
+}
+
+// Lãi/lỗ của 1 dòng hàng. profit=null nghĩa là không xác định được giá vốn
+function itemProfit(it){
+  const cost=it.costPrice>0?it.costPrice:getProductCostPrice(it.productId,it.qty);
+  if(cost===null)return{cost:null,profit:null};
+  return{cost,profit:(it.price-cost)*it.qty};
+}
+
+function profitCell(it){
+  const{profit}=itemProfit(it);
+  if(profit===null)return`<td class="text-muted" title="Chưa có giá vốn">—</td>`;
+  return`<td class="${profit>=0?'text-green':'text-red'} font-bold">${profit>=0?'+':''} ${fmtK(profit)}</td>`;
+}
+
+function sumProfit(items){
+  return(items||[]).reduce((s,it)=>{const{profit}=itemProfit(it);return s+(profit||0);},0);
+}
 function calculateFIFOCost(items){
   const lots=[];
   (DB.stockImports||[]).forEach(imp=>{
@@ -2444,10 +2464,10 @@ function renderDailySalesTable(){
       ${i===0?`<td rowspan="${n}"><code>${e.time||e.id}</code></td><td rowspan="${n}"><strong>${e.customerName||'khách vãng lai'}</strong></td>`:''}
       <td>${it.icon||'📦'} ${it.name}</td>
       <td>${it.qty} ${it.unit||''}</td>
-      <td>${fmtK(it.costPrice||0)}</td>
+      <td>${itemProfit(it).cost===null?'<span class="text-muted">—</span>':fmtK(itemProfit(it).cost)}</td>
       <td>${fmtK(it.price)}</td>
       <td class="font-bold">${fmtK(it.qty*it.price)}</td>
-      <td class="${(it.profit||0)>=0?'text-green':'text-red'} font-bold">${(it.profit||0)>=0?'+':''} ${fmtK(it.profit||0)}</td>
+      ${profitCell(it)}
       ${i===0?`<td rowspan="${n}" style="max-width:140px;overflow:hidden;text-overflow:ellipsis">${e.note||'—'}</td>
       <td rowspan="${n}"><div style="display:flex;gap:4px">
         <button class="btn btn-outline btn-sm" onclick="showEditDailySales('${e.id}')">✏️</button>
@@ -2456,7 +2476,7 @@ function renderDailySalesTable(){
     </tr>`).join('');
   }).join('');
   const total=entries.reduce((s,e)=>s+(e.totalAmount||0),0);
-  const profit=entries.reduce((s,e)=>s+e.items.reduce((ss,it)=>ss+(it.profit||0),0),0);
+  const profit=entries.reduce((s,e)=>s+sumProfit(e.items),0);
   foot.innerHTML=`<tr><td colspan="6" class="text-right font-bold">💰 Ngày ${fmtD(dailySalesDate)}:</td><td class="font-bold text-green">${fmtK(total)}</td><td class="${profit>=0?'font-bold text-green':'font-bold text-red'}">${profit>=0?'+':''} ${fmtK(profit)}</td><td colspan="2"></td></tr>`;
 }
 
