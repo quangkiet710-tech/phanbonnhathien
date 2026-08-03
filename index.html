@@ -567,6 +567,26 @@ window.__syncApplyDB=function(data){
 };
 window.__syncGetDB=function(){return DB;};
 
+// Đánh dấu XOÁ TƯỜNG MINH. Chỉ các hàm xoá trong app mới được gọi. Phần đồng bộ
+// không còn tự suy ra "đã xoá" bằng cách so ảnh chụp nữa — cách đó từng xoá oan
+// 19 ghi chép ngày 03/08.
+function markDeleted(coll,id){
+  if(id==null)return;
+  if(!DB._deleted)DB._deleted={};
+  if(!DB._deleted[coll])DB._deleted[coll]={};
+  DB._deleted[coll][id]=Date.now();
+}
+
+// Lỗi ngầm là thứ nguy hiểm nhất: bấm Lưu, không thấy gì, tưởng đã lưu.
+// Từ nay mọi lỗi chưa bắt được đều hiện đỏ chình ình.
+window.addEventListener('error',function(ev){
+  try{
+    const m=(ev&&ev.message)||'lỗi không rõ';
+    toast('❌ LỖI: '+m+' — CHƯA LƯU ĐƯỢC, báo kỹ thuật ngay!','error');
+    console.error('[app] Lỗi chưa bắt được:',ev.error||m);
+  }catch(e){}
+});
+
 // ============================================================
 // UTILS
 // ============================================================
@@ -1696,6 +1716,7 @@ function saveEditProduct(id){
 }
 function deleteProduct(id){
   if(!confirm('Xóa sản phẩm?'))return;
+  markDeleted('products',id);
   DB.products=DB.products.filter(x=>x.id!==id);saveDB();toast('Đã xóa','warning');
   renderAdminProducts(document.getElementById('admin-content'));
 }
@@ -1840,8 +1861,10 @@ function deleteImport(id){
     if(p)p.stock=Math.max(0,(p.stock||0)-(item.qty||0));
   });
   // 2. gỡ các dòng lịch sử giá sinh ra từ chính phiếu này
+  (DB.priceHistory||[]).forEach(h=>{if(h.sourceType==='stockImport'&&h.sourceId===imp.id)markDeleted('priceHistory',h.id);});
   DB.priceHistory=(DB.priceHistory||[]).filter(h=>!(h.sourceType==='stockImport'&&h.sourceId===imp.id));
   // 3. bỏ phiếu (công nợ NCC tự tính lại từ danh sách phiếu nên không cần sửa tay)
+  markDeleted('stockImports',id);
   DB.stockImports=(DB.stockImports||[]).filter(x=>x.id!==id);
   // 4. giá vốn đã bị phiếu này ghi đè -> trả về theo phiếu nhập còn lại gần nhất
   (imp.items||[]).forEach(item=>{
@@ -2231,6 +2254,7 @@ function deleteSupplier(supplier){
   const total=imps.reduce((s,i)=>s+(i.total||0),0);
   const debt=imps.reduce((s,i)=>s+impDebt(i),0);
   if(!confirm(`Xóa NCC "${supplier}"?\n\n- Sẽ xóa ${imps.length} phiếu nhập (tổng ${fmt(total)}${debt>0?', đang còn nợ '+fmt(debt):''}) khỏi lịch sử.\n- Tồn kho sản phẩm KHÔNG thay đổi.\n\nHành động này không thể hoàn tác!`))return;
+  (DB.stockImports||[]).forEach(i=>{if(supKey(i)===supplier)markDeleted('stockImports',i.id);});
   DB.stockImports=(DB.stockImports||[]).filter(i=>supKey(i)!==supplier);
   saveDB();
   toast(`Đã xóa NCC "${supplier}" (${imps.length} phiếu nhập)`,'warning');
@@ -2360,6 +2384,7 @@ function deleteCustomer(id){
   }else{
     if(!confirm('Xóa khách hàng này?'))return;
   }
+  markDeleted('customers',id);
   DB.customers=DB.customers.filter(x=>x.id!==id);saveDB();toast('Đã xóa khách hàng','warning');
   renderAdminCustomers(document.getElementById('admin-content'));
 }
@@ -2828,12 +2853,14 @@ function deleteDailySales(id){
   // Trả lại doanh thu + nợ, hoặc xóa hẳn khách
   if(cust){
     if(dropCust){
+      markDeleted('customers',cust.id);
       DB.customers=DB.customers.filter(x=>x!==cust);
     }else{
       cust.revenue=Math.max(0,(cust.revenue||0)-(entry.totalAmount||0));
       cust.debt=Math.max(0,(cust.debt||0)-(entry.totalAmount||0));
     }
   }
+  markDeleted('dailySales',id);
   DB.dailySales=DB.dailySales.filter(x=>x.id!==id);
   saveDB();
   toast(dropCust?`Đã xóa ghi chép và khách "${cust.name}"`:'Đã xóa ghi chép, restore kho và khách hàng','warning');
@@ -3091,6 +3118,7 @@ function deleteInvoice(id){
     const cu=DB.customers.find(x=>x.id===inv.customerId);
     if(cu)cu.debt=Math.max(0,(cu.debt||0)-inv.debt);
   }
+  markDeleted('invoices',id);
   DB.invoices=DB.invoices.filter(x=>x.id!==id);
   saveDB();toast('Đã xóa hóa đơn','warning');
   renderAdminInvoices(document.getElementById('admin-content'));
@@ -3175,6 +3203,7 @@ function renderAdminSettings(c){
       <div class="card-header">🛟 Sao lưu &amp; khôi phục</div>
       <div class="card-body">
         <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">
+          <button class="btn btn-green btn-sm" onclick="restoreFromJournal()">📓 Lấy lại từ nhật ký</button>
           <button class="btn btn-outline btn-sm" onclick="exportBackupFile()">📤 Tải file sao lưu về máy</button>
           <button class="btn btn-outline btn-sm" onclick="document.getElementById('backup-file-inp').click()">📥 Phục hồi từ file</button>
           <input type="file" id="backup-file-inp" accept=".json,application/json" style="display:none" onchange="importBackupFile(this)"/>
@@ -3218,6 +3247,7 @@ function mergeMissingInto(target,source){
     const have={};target[k].forEach(r=>{if(r&&r.id!=null)have[r.id]=1;});
     source[k].forEach(r=>{
       if(!r||r.id==null||have[r.id])return;
+      have[r.id]=1;                                  // chặn nguồn có id trùng bị thêm 2 lần
       const copy=JSON.parse(JSON.stringify(r));
       copy._ts=Date.now();
       target[k].push(copy);
@@ -3239,6 +3269,29 @@ function restoreFromBackup(i){
   const r=mergeMissingInto(DB,src);
   saveDB();
   toast(`Đã lấy lại ${r.added} bản ghi`,'success');
+  renderAdminSettings(document.getElementById('admin-content'));
+}
+
+// Nhật ký chỉ ghi thêm, không bao giờ bị đồng bộ đụng tới -> nguồn cứu cuối cùng
+function restoreFromJournal(){
+  const j=(typeof window.__syncJournal==='function')?window.__syncJournal():[];
+  if(!j.length){toast('Nhật ký chưa ghi được gì','info');return;}
+  // gom theo id, lấy bản ghi mới nhất của mỗi id
+  const map={};
+  j.forEach(e=>{
+    if(!e||!e.coll||!e.rec||e.rec.id==null)return;
+    if(!map[e.coll])map[e.coll]={};
+    map[e.coll][e.rec.id]=e.rec;
+  });
+  const src={};
+  Object.keys(map).forEach(k=>{src[k]=Object.keys(map[k]).map(id=>map[k][id]);});
+  const preview=mergeMissingInto(JSON.parse(JSON.stringify(DB)),src);
+  if(!preview.added){toast(`Nhật ký có ${j.length} mục, dữ liệu hiện tại không thiếu gì`,'info');return;}
+  const lines=Object.keys(preview.detail).map(k=>`  • ${k}: ${preview.detail[k]}`).join('\n');
+  if(!confirm(`Nhật ký giữ ${j.length} mục đã từng lưu.\n\nSẽ THÊM ${preview.added} bản ghi đang thiếu:\n\n${lines}\n\nKhông có gì bị xoá hay ghi đè. Tiếp tục?`))return;
+  const r=mergeMissingInto(DB,src);
+  saveDB();
+  toast(`Đã lấy lại ${r.added} bản ghi từ nhật ký`,'success');
   renderAdminSettings(document.getElementById('admin-content'));
 }
 

@@ -17,7 +17,9 @@
   const META_KEY = 'agropos_v2_meta';
   const PREV_KEY = 'agropos_v2_prev';      // ảnh chụp lần lưu trước, dùng để biết bản ghi nào vừa đổi
   const BACKUP_KEY = 'agropos_v2_backups'; // lưới an toàn: các bản sao gần đây
-  const DEBOUNCE_MS = 1500;
+  const JOURNAL_KEY = 'agropos_v2_journal'; // nhật ký chỉ-ghi-thêm, không bao giờ bị gộp
+  const MAX_JOURNAL = 800;
+  const DEBOUNCE_MS = 400;
   const POLL_INTERVAL = 15000;
   // Mỗi bản sao nặng bằng cả cục dữ liệu (~140 KB, trình duyệt lưu 2 byte/ký tự
   // nên tốn gấp đôi). Giữ 12 bản là ngốn ~3,4 MB, sát trần ~5 MB của trình duyệt
@@ -160,9 +162,33 @@
   };
 
   // ---------------------------------------------------------
-  // ĐÁNH DẤU THAY ĐỔI: bản ghi nào vừa sửa thì gắn _ts, bản ghi nào
-  // biến mất so với lần lưu trước thì ghi "bia mộ" để lần gộp sau biết
-  // đó là xoá thật, chứ không phải thiếu dữ liệu.
+  // NHẬT KÝ: mọi bản ghi từng được lưu đều được chép vào đây, chỉ ghi thêm,
+  // không bao giờ bị gộp hay bị đồng bộ đụng tới. Đây là lưới an toàn cuối
+  // cùng: kể cả phần đồng bộ có sai, dữ liệu vẫn còn ở đây để lấy lại.
+  // ---------------------------------------------------------
+  function appendJournal(list) {
+    if (!list || !list.length) return;
+    let j = [];
+    try { j = JSON.parse(localStorage.getItem(JOURNAL_KEY)) || []; } catch (e) { j = []; }
+    const now = Date.now();
+    list.forEach(x => j.push({ at: now, coll: x.coll, rec: x.rec }));
+    while (j.length > MAX_JOURNAL) j.shift();
+    for (;;) {
+      try { localStorage.setItem(JOURNAL_KEY, JSON.stringify(j)); break; }
+      catch (e) { j.splice(0, Math.max(1, Math.floor(j.length / 4))); if (!j.length) break; }
+    }
+  }
+  window.__syncJournal = function () {
+    try { return JSON.parse(localStorage.getItem(JOURNAL_KEY)) || []; } catch (e) { return []; }
+  };
+
+  // ---------------------------------------------------------
+  // ĐÁNH DẤU THAY ĐỔI: chỉ gắn dấu thời gian cho bản ghi mới/vừa sửa.
+  //
+  // TUYỆT ĐỐI KHÔNG suy ra "đã xoá" bằng cách so ảnh chụp trước/sau. Ngày
+  // 03/08 cách làm đó đã xoá oan 19 ghi chép: bản trong bộ nhớ trang cũ hơn
+  // bản dưới ổ đĩa, ghi đè xuống thì phần chênh bị hiểu nhầm là người dùng
+  // xoá. Nay chỉ có nút Xoá trong app mới sinh được bia mộ.
   // ---------------------------------------------------------
   function indexById(arr) {
     const m = {};
@@ -175,27 +201,20 @@
     try { prev = JSON.parse(localStorage.getItem(PREV_KEY)); } catch (e) { prev = null; }
     const now = Date.now();
     data._deleted = data._deleted || {};
+    const vuaLuu = [];
     COLLECTIONS.forEach(k => {
       const cur = Array.isArray(data[k]) ? data[k] : [];
       const prevMap = prev ? indexById(prev[k]) : null;
       cur.forEach(r => {
         if (!r || typeof r !== 'object' || r.id == null) return;
         const p = prevMap ? prevMap[r.id] : undefined;
-        if (!p) { if (!r._ts) r._ts = now; return; }          // bản ghi mới
-        if (bodyOf(p) !== bodyOf(r)) r._ts = now;             // bản ghi vừa sửa
-        else if (!r._ts) r._ts = p._ts || now;                // giữ nguyên dấu cũ
+        if (!p) { if (!r._ts) r._ts = now; vuaLuu.push({ coll: k, rec: r }); return; }  // mới
+        if (bodyOf(p) !== bodyOf(r)) { r._ts = now; vuaLuu.push({ coll: k, rec: r }); } // vừa sửa
+        else if (!r._ts) r._ts = p._ts || now;                                          // giữ dấu cũ
       });
-      if (prevMap) {
-        const curIds = {};
-        cur.forEach(r => { if (r && r.id != null) curIds[r.id] = 1; });
-        Object.keys(prevMap).forEach(id => {
-          if (!curIds[id]) {
-            data._deleted[k] = data._deleted[k] || {};
-            data._deleted[k][id] = now;                        // xoá thật -> bia mộ
-          }
-        });
-      }
+      // KHÔNG sinh bia mộ ở đây. Chỉ hàm xoá trong app mới được phép.
     });
+    appendJournal(vuaLuu);
     try { localStorage.setItem(PREV_KEY, JSON.stringify(data)); } catch (e) {}
     return data;
   }
@@ -271,6 +290,10 @@
   async function syncNow(reason) {
     if (syncing) { dirty = true; return; }
     if (!navigator.onLine) { setStatus('offline'); return; }
+    // Đang mở form nhập liệu -> không đụng gì vào ổ đĩa. Trước đây phần đồng bộ
+    // vẫn ghi xuống ổ đĩa trong khi màn hình bị hoãn cập nhật, làm bản trong bộ
+    // nhớ trang cũ hơn bản dưới ổ đĩa — đúng khe hở gây xoá oan ngày 03/08.
+    if (isModalOpen()) { dirty = true; return; }
     syncing = true;
     setStatus('syncing');
     try {
