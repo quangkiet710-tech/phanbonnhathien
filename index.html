@@ -2485,6 +2485,13 @@ function showDailySalesForm(editId){
   const e=editId?DB.dailySales.find(x=>x.id===editId):null;
   if(editId&&!e)return;
   dailySalesCart=e?JSON.parse(JSON.stringify(e.items)):[];
+  // Bản ghi cũ lưu costPrice=0 -> điền giá vốn gợi ý để sửa/lưu lại cho đúng
+  dailySalesCart.forEach(it=>{
+    if(!(it.costPrice>0)){
+      it.costPrice=dsDefaultCost(it.productId);
+      it.profit=Math.round((it.price-it.costPrice)*it.qty);
+    }
+  });
   showModal(`<div class="modal modal-lg">
     <div class="modal-header"><span>📝</span><h2>${e?'Sửa sổ bán hàng':'Thêm sổ bán hàng'}</h2><button class="btn btn-ghost btn-icon" onclick="closeModal()">✕</button></div>
     <div class="modal-body">
@@ -2508,7 +2515,7 @@ function showDailySalesForm(editId){
         </div>
         <div class="form-group" style="margin:0;min-width:100px"><label style="font-size:10px">Đơn vị</label><select class="form-control" id="ds-unit"><option value="">—</option></select></div>
         <div class="form-group" style="margin:0;width:70px"><label style="font-size:10px">SL</label><input class="form-control" type="text" inputmode="numeric" id="ds-qty" oninput="filterNumInput(this,true)"/></div>
-        <div class="form-group" style="margin:0;min-width:90px"><label style="font-size:10px">Giá vốn (FIFO)</label><input class="form-control" type="text" inputmode="numeric" id="ds-cost" readonly style="background:var(--g50);cursor:not-allowed"/></div>
+        <div class="form-group" style="margin:0;min-width:90px"><label style="font-size:10px">Giá vốn</label><input class="form-control" type="text" inputmode="numeric" id="ds-cost" oninput="filterNumInput(this,false)" title="Tự điền theo lô nhập cũ nhất, sửa được"/></div>
         <div class="form-group" style="margin:0;flex:1;min-width:100px"><label style="font-size:10px">Đơn giá bán</label><input class="form-control" type="text" inputmode="numeric" id="ds-price" oninput="filterNumInput(this,false)"/></div>
         <button class="btn btn-green btn-icon" onclick="addDailySalesItem()">+</button>
       </div>
@@ -2552,6 +2559,29 @@ function dsSearchProd(q){
   el.style.display='block';
 }
 
+// Giá vốn gợi ý: lô nhập cũ nhất, không có thì lấy giá vốn của sản phẩm
+function dsDefaultCost(productId){
+  const lots=[];
+  (DB.stockImports||[]).forEach(imp=>{
+    (imp.items||[]).forEach(item=>{
+      if(item.productId===productId)lots.push({cost:item.cost,importDate:imp.date});
+    });
+  });
+  lots.sort((a,b)=>(a.importDate||'').localeCompare(b.importDate||''));
+  if(lots.length)return lots[0].cost;
+  const p=DB.products.find(x=>x.id===productId);
+  return p?.cost||0;
+}
+
+// Sửa giá vốn của 1 dòng đã có trong giỏ
+function setCartCost(i,v){
+  const it=dailySalesCart[i];if(!it)return;
+  it.costPrice=+v||0;
+  it.profit=Math.round((it.price-it.costPrice)*it.qty);
+  it.profitMargin=it.price>0?((it.price-it.costPrice)/it.price*100).toFixed(1)+'%':'0%';
+  renderDailySalesItems();
+}
+
 function dsPickProd(id){
   const p=DB.products.find(x=>x.id===id);if(!p)return;
   const inp=document.getElementById('ds-prod-inp');
@@ -2561,16 +2591,8 @@ function dsPickProd(id){
     sel.innerHTML=p.units.map((u,i)=>`<option value="${u.name}" data-price="${u.price}" ${i===0?'selected':''}>${u.name}</option>`).join('');
     sel.onchange=function(){};
   }
-  // Tính giá vốn từ FIFO
-  const lots=[];
-  (DB.stockImports||[]).forEach(imp=>{
-    (imp.items||[]).forEach(item=>{
-      if(item.productId===id)lots.push({cost:item.cost,qty:item.qty,importDate:imp.date});
-    });
-  });
-  lots.sort((a,b)=>(a.importDate||'').localeCompare(b.importDate||''));
   const costEl=document.getElementById('ds-cost');
-  if(costEl)costEl.value=lots.length?lots[0].cost:p.cost||'';
+  if(costEl)costEl.value=dsDefaultCost(id)||'';
   const ac=document.getElementById('ds-ac');if(ac){ac.style.display='none';ac.innerHTML='';}
   const qty=document.getElementById('ds-qty');if(qty)qty.focus();
 }
@@ -2607,7 +2629,10 @@ function renderDailySalesItems(){
       <thead><tr><th>Sản phẩm</th><th>ĐVT</th><th>SL</th><th>Giá vốn</th><th>Đơn giá</th><th>Thành tiền</th><th>Lãi/Lỗ</th><th></th></tr></thead>
       <tbody>${dailySalesCart.map((it,i)=>`<tr>
         <td>${it.icon||'📦'} ${it.name}</td><td>${it.unit||'—'}</td><td>${it.qty}</td>
-        <td>${fmtK(it.costPrice||0)}</td><td>${fmtK(it.price)}</td><td class="font-bold">${fmtK(it.qty*it.price)}</td>
+        <td><input class="form-control" type="text" inputmode="numeric" value="${it.costPrice||''}" placeholder="0"
+          oninput="filterNumInput(this,false)" onchange="setCartCost(${i},this.value)"
+          style="padding:4px 6px;width:90px;font-size:12px" title="Sửa giá vốn nếu cần"/></td>
+        <td>${fmtK(it.price)}</td><td class="font-bold">${fmtK(it.qty*it.price)}</td>
         <td class="${(it.profit||0)>=0?'text-green':'text-red'} font-bold">${(it.profit||0)>=0?'+':''} ${fmtK(it.profit||0)}</td>
         <td><button class="btn btn-red btn-sm btn-icon" onclick="dailySalesCart.splice(${i},1);renderDailySalesItems()">✕</button></td>
       </tr>`).join('')}</tbody>
