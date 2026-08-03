@@ -1714,7 +1714,7 @@ function renderAdminInventory(c){
       <div class="card-header">📋 Lịch sử nhập kho</div>
       <div class="tbl-wrap"><table>
         <thead><tr><th>Mã phiếu</th><th>Ngày</th><th>NCC</th><th>Sản phẩm</th><th>Tổng tiền</th><th>Thanh toán</th><th></th></tr></thead>
-        <tbody>${DB.stockImports.map(i=>`<tr><td><code>${i.id}</code></td><td>${fmtD(i.date)}</td><td>${i.supplier}</td><td>${i.items.map(x=>`${x.name}(${x.qty})`).join(', ')}</td><td><strong>${fmtK(i.total)}</strong></td><td>${impDebt(i)>0?`<span class="badge badge-amber">Còn nợ ${fmtK(impDebt(i))}</span>`:'<span class="badge badge-green">Đã TT</span>'}</td><td><button class="btn btn-outline btn-sm" onclick="showEditImport('${i.id}')">✏️</button></td></tr>`).join('')||'<tr><td colspan="7" class="text-center text-muted" style="padding:24px">Chưa có phiếu nhập</td></tr>'}
+        <tbody>${DB.stockImports.map(i=>`<tr><td><code>${i.id}</code></td><td>${fmtD(i.date)}</td><td>${i.supplier}</td><td>${i.items.map(x=>`${x.name}(${x.qty})`).join(', ')}</td><td><strong>${fmtK(i.total)}</strong></td><td>${impDebt(i)>0?`<span class="badge badge-amber">Còn nợ ${fmtK(impDebt(i))}</span>`:'<span class="badge badge-green">Đã TT</span>'}</td><td><div style="display:flex;gap:4px"><button class="btn btn-outline btn-sm" onclick="showEditImport('${i.id}')">✏️</button><button class="btn btn-red btn-sm" onclick="deleteImport('${i.id}')">🗑</button></div></td></tr>`).join('')||'<tr><td colspan="7" class="text-center text-muted" style="padding:24px">Chưa có phiếu nhập</td></tr>'}
         </tbody>
       </table></div>
     </div>
@@ -1815,6 +1815,43 @@ function saveImport(){
   addPriceHistory('cost',imp.items.map(x=>({productId:x.productId,name:x.name,price:x.cost,qty:x.qty})),date,imp.id,'stockImport');
   valid.forEach(item=>{const p=DB.products.find(x=>x.id===item.productId);if(p){p.stock+=item.qty;p.cost=item.cost;}});
   saveDB();closeModal();toast(`Nhập kho thành công! ${fmt(total)}`);
+  renderAdminInventory(document.getElementById('admin-content'));
+}
+
+/* ---- DELETE IMPORT (Xóa phiếu nhập, ví dụ nhập trùng 2 lần) ---- */
+function deleteImport(id){
+  const imp=(DB.stockImports||[]).find(x=>x.id===id);if(!imp)return;
+  const paid=impPaid(imp);
+  // Báo trước những SP sẽ bị âm tồn, vì đó là dấu hiệu số liệu đang lệch
+  const amTon=(imp.items||[]).filter(item=>{
+    const p=DB.products.find(x=>x.id===item.productId);
+    return p&&(p.stock||0)-(item.qty||0)<0;
+  }).map(item=>{
+    const p=DB.products.find(x=>x.id===item.productId);
+    return `${item.name}: còn ${p.stock||0}, phiếu ghi ${item.qty}`;
+  });
+  let msg=`Xóa phiếu nhập ${imp.id}\nNCC: ${imp.supplier}\nTiền: ${fmt(imp.total||0)}\n\nTồn kho sẽ bị TRỪ LẠI đúng số đã nhập của phiếu này.`;
+  if(paid>0)msg+=`\n\n⚠️ Phiếu này đã trả NCC ${fmt(paid)} — thông tin đã trả sẽ mất theo.`;
+  if(amTon.length)msg+=`\n\n⚠️ Các SP sau sẽ bị âm tồn (đã bán bớt rồi), app sẽ để về 0:\n  • ${amTon.join('\n  • ')}`;
+  if(!confirm(msg+'\n\nVẫn xóa?'))return;
+  // 1. trừ lại tồn kho
+  (imp.items||[]).forEach(item=>{
+    const p=DB.products.find(x=>x.id===item.productId);
+    if(p)p.stock=Math.max(0,(p.stock||0)-(item.qty||0));
+  });
+  // 2. gỡ các dòng lịch sử giá sinh ra từ chính phiếu này
+  DB.priceHistory=(DB.priceHistory||[]).filter(h=>!(h.sourceType==='stockImport'&&h.sourceId===imp.id));
+  // 3. bỏ phiếu (công nợ NCC tự tính lại từ danh sách phiếu nên không cần sửa tay)
+  DB.stockImports=(DB.stockImports||[]).filter(x=>x.id!==id);
+  // 4. giá vốn đã bị phiếu này ghi đè -> trả về theo phiếu nhập còn lại gần nhất
+  (imp.items||[]).forEach(item=>{
+    const prev=(DB.stockImports||[]).find(i=>(i.items||[]).some(x=>x.productId===item.productId));
+    if(!prev)return;
+    const line=prev.items.find(x=>x.productId===item.productId);
+    const p=DB.products.find(x=>x.id===item.productId);
+    if(p&&line&&line.cost)p.cost=line.cost;
+  });
+  saveDB();toast('Đã xóa phiếu nhập','warning');
   renderAdminInventory(document.getElementById('admin-content'));
 }
 
