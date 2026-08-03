@@ -2647,31 +2647,27 @@ function saveDailySales(editId){
     return;
   }
 
+  let savedEntry;
   if(editId){
     const e=DB.dailySales.find(x=>x.id===editId);
     if(!e){toast('Không tìm thấy ghi chép!','error');return;}
-    // Restore kho + cộng nợ khách (nếu có)
+    // Restore kho
     (e.items||[]).forEach(it=>{
       const p=DB.products.find(x=>x.id===it.productId);
       if(p)p.stock+=it.qty;
     });
-    if(e.customerId&&e.customerId!==''){
-      const oldCust=DB.customers.find(x=>x.id===e.customerId);
-      if(oldCust)oldCust.debt-=(e.totalAmount||0);
+    // Hoàn lại doanh thu + nợ của khách cũ (khối cộng lại nằm ở cuối hàm)
+    const oldCust=findEntryCustomer(e);
+    if(oldCust){
+      oldCust.revenue=Math.max(0,(oldCust.revenue||0)-(e.totalAmount||0));
+      oldCust.debt=Math.max(0,(oldCust.debt||0)-(e.totalAmount||0));
     }
     e.date=date;e.note=note;
     e.customerId=custId;e.customerName=custName;
     e.items=JSON.parse(JSON.stringify(items));
     e.totalAmount=totalAmount;
     e.totalProfit=totalProfit;
-    // Cộng nợ cho khách hàng mới
-    if(custId){
-      const newCust=DB.customers.find(x=>x.id===custId);
-      if(newCust){
-        newCust.revenue=(newCust.revenue||0)+totalAmount;
-        newCust.debt=(newCust.debt||0)+totalAmount;
-      }
-    }
+    savedEntry=e;
   }else{
     const entry={
       id:'SB'+Date.now().toString().slice(-6),
@@ -2682,6 +2678,7 @@ function saveDailySales(editId){
       totalAmount,totalProfit,note
     };
     DB.dailySales.unshift(entry);
+    savedEntry=entry;
     addPriceHistory('selling',entry.items.map(x=>({productId:x.productId,name:x.name,price:x.price,qty:x.qty})),date,entry.id,'dailySales');
   }
 
@@ -2708,6 +2705,7 @@ function saveDailySales(editId){
       cust.revenue=(cust.revenue||0)+totalAmount;
       cust.debt=(cust.debt||0)+totalAmount;
       custId=cust.id;
+      savedEntry.customerId=cust.id; // gắn id để lần sửa/xóa sau tìm đúng khách
     }
   }
 
@@ -2720,28 +2718,48 @@ function saveDailySales(editId){
 
 function showEditDailySales(id){showDailySalesForm(id);}
 
+// Tìm khách gắn với 1 ghi chép: ưu tiên theo id, không có thì theo tên
+function findEntryCustomer(entry){
+  if(!entry||!entry.customerName||entry.customerName==='khách vãng lai')return null;
+  return(entry.customerId?DB.customers.find(x=>x.id===entry.customerId):null)
+      ||DB.customers.find(x=>x.name===entry.customerName)||null;
+}
+
+// Khách còn dữ liệu nào khác ngoài ghi chép sắp xóa không?
+function customerHasOtherData(cust,excludeSaleId){
+  const match=o=>(o.customerId&&o.customerId===cust.id)||o.customerName===cust.name;
+  return(DB.dailySales||[]).some(s=>s.id!==excludeSaleId&&match(s))
+      ||(DB.invoices||[]).some(match)
+      ||(DB.custOrders||[]).some(o=>o.customerId===cust.id);
+}
+
 function deleteDailySales(id){
-  if(!confirm('Xóa ghi chép bán hàng này? Kho hàng sẽ được restore.'))return;
   const entry=DB.dailySales.find(x=>x.id===id);
-  if(entry){
-    // Restore kho
-    (entry.items||[]).forEach(it=>{
-      const p=DB.products.find(x=>x.id===it.productId);
-      if(p)p.stock+=it.qty;
-    });
-    // Restore thông tin khách hàng
-    if(entry.customerName&&entry.customerName!=='khách vãng lai'){
-      let cust=DB.customers.find(x=>x.id===entry.customerId);
-      if(!cust)cust=DB.customers.find(x=>x.name===entry.customerName);
-      if(cust){
-        cust.revenue=Math.max(0,(cust.revenue||0)-(entry.totalAmount||0));
-        cust.debt=Math.max(0,(cust.debt||0)-(entry.totalAmount||0));
-      }
+  if(!entry){toast('Không tìm thấy ghi chép!','error');return;}
+  const cust=findEntryCustomer(entry);
+  // Xóa luôn khách nếu ghi chép này là dữ liệu cuối cùng của họ
+  const dropCust=!!cust&&!customerHasOtherData(cust,id);
+  let msg='Xóa ghi chép bán hàng này? Kho hàng sẽ được restore.';
+  if(dropCust)msg+=`\n\nKhách "${cust.name}" không còn ghi chép nào khác → sẽ bị xóa khỏi danh sách khách hàng.`;
+  if(!confirm(msg))return;
+
+  // Restore kho
+  (entry.items||[]).forEach(it=>{
+    const p=DB.products.find(x=>x.id===it.productId);
+    if(p)p.stock+=it.qty;
+  });
+  // Trả lại doanh thu + nợ, hoặc xóa hẳn khách
+  if(cust){
+    if(dropCust){
+      DB.customers=DB.customers.filter(x=>x!==cust);
+    }else{
+      cust.revenue=Math.max(0,(cust.revenue||0)-(entry.totalAmount||0));
+      cust.debt=Math.max(0,(cust.debt||0)-(entry.totalAmount||0));
     }
   }
   DB.dailySales=DB.dailySales.filter(x=>x.id!==id);
   saveDB();
-  toast('Đã xóa ghi chép, restore kho và khách hàng','warning');
+  toast(dropCust?`Đã xóa ghi chép và khách "${cust.name}"`:'Đã xóa ghi chép, restore kho và khách hàng','warning');
   renderDailySalesTable();
 }
 
