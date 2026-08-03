@@ -19,7 +19,10 @@
   const BACKUP_KEY = 'agropos_v2_backups'; // lưới an toàn: các bản sao gần đây
   const DEBOUNCE_MS = 1500;
   const POLL_INTERVAL = 15000;
-  const MAX_BACKUPS = 12;
+  // Mỗi bản sao nặng bằng cả cục dữ liệu (~140 KB, trình duyệt lưu 2 byte/ký tự
+  // nên tốn gấp đôi). Giữ 12 bản là ngốn ~3,4 MB, sát trần ~5 MB của trình duyệt
+  // và làm lệnh lưu có nguy cơ văng lỗi hết chỗ. Giữ 4 bản là đủ dùng.
+  const MAX_BACKUPS = 4;
 
   // Các bảng dữ liệu dạng mảng có khoá 'id'
   const COLLECTIONS = ['products', 'customers', 'invoices', 'stockImports', 'custOrders', 'dailySales', 'priceHistory'];
@@ -416,6 +419,17 @@
   setStatus('syncing');
   hookSaveDB();
   // Lần chạy đầu: chụp ảnh gốc để lần sau biết cái gì đã đổi
+  // Dọn bớt bản sao thừa do bản trước giữ tới 12 bản (ngốn ~4 MB, sát trần trình duyệt)
+  try {
+    let list = JSON.parse(localStorage.getItem(BACKUP_KEY)) || [];
+    if (list.length > MAX_BACKUPS) {
+      const truoc = list.length;
+      list = list.slice(-MAX_BACKUPS);              // giữ lại các bản MỚI nhất
+      localStorage.setItem(BACKUP_KEY, JSON.stringify(list));
+      console.log('[sync] Dọn bản sao cũ: ' + truoc + ' -> ' + list.length + ' bản.');
+    }
+  } catch (e) {}
+
   try {
     const first = readLocal();
     if (first) {
