@@ -468,6 +468,7 @@ tr:hover td{background:var(--g50);}
       <div class="sidebar-item" onclick="showAdminPage('products')"><span class="s-icon">📦</span>Sản phẩm</div>
       <div class="sidebar-item" onclick="showAdminPage('inventory')"><span class="s-icon">🏭</span>Nhập kho</div>
       <div class="sidebar-item" onclick="showAdminPage('batchimport')"><span class="s-icon">📥</span>Nhập hàng loạt</div>
+      <div class="sidebar-item" onclick="showAdminPage('recon')"><span class="s-icon">🔍</span>Đối chiếu tồn kho</div>
       <div class="sidebar-section">Khách hàng</div>
       <div class="sidebar-item" onclick="showAdminPage('customers')"><span class="s-icon">👥</span>Khách hàng</div>
       <div class="sidebar-item" onclick="showAdminPage('debt')"><span class="s-icon">💳</span>Công nợ</div>
@@ -550,7 +551,8 @@ const DEFAULT = {
   stockImports:[],
   custOrders:[],
   dailySales:[],
-  priceHistory:[]
+  priceHistory:[],
+  inventoryChecks:[]
 };
 
 function loadDB(){try{const r=localStorage.getItem(KEY);if(r)return JSON.parse(r);}catch(e){}return JSON.parse(JSON.stringify(DEFAULT));}
@@ -899,7 +901,7 @@ function showProdDetail(id){
     </div>
     <div class="modal-body">
       <div style="text-align:center;font-size:72px;padding:16px;background:var(--g50);border-radius:var(--radius);margin-bottom:16px">${p.image?`<img src="${p.image}" style="width:120px;height:120px;object-fit:cover;border-radius:8px"/>`:p.icon}</div>
-      <div style="margin-bottom:6px"><span class="badge badge-green">${p.cat}</span> <span class="badge badge-gray">Kho: ${p.stock}</span></div>
+      <div style="margin-bottom:6px"><span class="badge badge-green">${p.cat}</span> <span class="badge badge-gray">Kho: ${fmtStock(p)}</span></div>
       <div style="font-weight:800;font-size:15px;margin-bottom:12px">${p.name}</div>
 
       <div class="form-group mb-12">
@@ -1158,9 +1160,52 @@ function showAdminPage(page){
   // close sidebar on mobile
   if(window.innerWidth<768)document.getElementById('admin-sidebar').classList.remove('open');
   const c=document.getElementById('admin-content');
-  ({pos:renderAdminPOS,dashboard:renderAdminDash,products:renderAdminProducts,inventory:renderAdminInventory,batchimport:renderBatchImport,customers:renderAdminCustomers,debt:renderAdminDebt,supplierdebts:renderAdminSupplierDebts,invoices:renderAdminInvoices,dailysales:renderAdminDailySales,pricehistory:renderAdminPriceHistory,settings:renderAdminSettings}[page]||renderAdminDash)(c);
+  ({pos:renderAdminPOS,dashboard:renderAdminDash,products:renderAdminProducts,inventory:renderAdminInventory,batchimport:renderBatchImport,customers:renderAdminCustomers,debt:renderAdminDebt,supplierdebts:renderAdminSupplierDebts,invoices:renderAdminInvoices,dailysales:renderAdminDailySales,pricehistory:renderAdminPriceHistory,recon:renderAdminRecon,settings:renderAdminSettings}[page]||renderAdminDash)(c);
 }
 function toggleSidebar(){document.getElementById('admin-sidebar').classList.toggle('open');}
+
+/* ---- QUY ĐỔI ĐƠN VỊ (bao ↔ kg) ----
+   Tồn kho (p.stock) LUÔN đếm theo đơn vị gốc = đơn vị có ratio 1 (thường là "Bao").
+   ratio = số lượng đơn vị đó nằm trong 1 đơn vị gốc. Ví dụ Kg ratio 50 -> 1 bao = 50 kg.
+   Bán 15 Kg thì chỉ được trừ 15/50 = 0,3 bao, KHÔNG phải 15 bao. */
+function baseUnitOf(p){
+  const us=(p&&p.units)||[];
+  return us.find(u=>+u.ratio===1)||us[0]||null;
+}
+function unitOf(p,unitName){
+  const us=(p&&p.units)||[];
+  if(!unitName)return baseUnitOf(p);
+  return us.find(u=>u.name===unitName)||baseUnitOf(p);
+}
+function unitRatio(p,unitName){
+  const r=+(unitOf(p,unitName)||{}).ratio;
+  return r>0?r:1;
+}
+function round3(n){return Math.round((+n||0)*1000)/1000;}
+// Số lượng bán (theo đơn vị bất kỳ) -> số lượng theo đơn vị gốc, dùng để cộng/trừ kho
+function toBaseQty(p,qty,unitName){return round3((+qty||0)/unitRatio(p,unitName));}
+// Giá của 1 đơn vị gốc -> giá của đơn vị đang bán (giá vốn 1 bao -> giá vốn 1 kg)
+function costPerUnit(baseCost,p,unitName){return Math.round((+baseCost||0)/unitRatio(p,unitName));}
+// Tên đơn vị gọn: "Bao 50kg" -> "Bao"
+function shortUnitName(name){
+  return String(name||'').replace(/\s*\d+([.,]\d+)?\s*(kg|g|ml|l|lít|lit)\b/i,'').trim()||String(name||'');
+}
+function fmtQty(n){
+  const v=Math.round((+n||0)*100)/100;
+  return String(v).replace('.',',');
+}
+// Hiển thị tồn kho dạng "14 Bao 35 Kg" thay vì "14,7"
+function fmtStock(p){
+  const s=+((p&&p.stock)||0);
+  const baseName=shortUnitName((baseUnitOf(p)||{}).name||'');
+  const sub=((p&&p.units)||[]).filter(u=>+u.ratio>1).sort((a,b)=>b.ratio-a.ratio)[0];
+  if(s<0||!sub)return `${fmtQty(s)}${baseName?' '+baseName:''}`;
+  const whole=Math.floor(s+1e-6);
+  const sq=Math.round((s-whole)*sub.ratio*100)/100;
+  if(sq<0.005)return `${whole}${baseName?' '+baseName:''}`;
+  if(whole===0)return `${fmtQty(sq)} ${sub.name}`;
+  return `${whole}${baseName?' '+baseName:''} ${fmtQty(sq)} ${sub.name}`;
+}
 
 /* ---- PRODUCT TYPE (Phân loại tự động: Phân / Thuốc / Giống cây) ---- */
 const PROD_TYPES={
@@ -1263,7 +1308,7 @@ function renderPOSProducts(){
       <div class="p-icon">${p.icon}</div>
       <div class="p-name">${p.name}</div>
       <div class="p-price">${fmt(p.units[0]?.price||p.price)}</div>
-      <div class="p-stock ${p.stock<=p.minStock?'text-red':'text-muted'}">Kho: ${p.stock}</div>
+      <div class="p-stock ${p.stock<=p.minStock?'text-red':'text-muted'}">Kho: ${fmtStock(p)}</div>
     </div>`;
   if(!prods.length){el.innerHTML='<div style="text-align:center;padding:32px;color:var(--muted)">Không tìm thấy</div>';return;}
   const g=groupProdsByType(prods);
@@ -1309,7 +1354,10 @@ function posAddFromModal(id){
   const unitIdx=window.posSelUnit||0;
   const unit=p.units[unitIdx]||p.units[0];
   const qty=parseFloat(document.getElementById('pos-qty-inp')?.value)||1;
-  if(p.stock<qty){toast('Không đủ tồn kho!','error');return;}
+  // So sánh theo đơn vị gốc: bán 15 Kg chỉ tốn 0,3 bao chứ không phải 15 bao
+  const canTru=toBaseQty(p,qty,unit.name);
+  const dangCoTrongGio=posCart.filter(i=>i.productId===p.id).reduce((s,i)=>s+toBaseQty(p,i.qty,i.unit),0);
+  if(p.stock<canTru+dangCoTrongGio-1e-6){toast(`Không đủ tồn kho! Còn ${fmtStock(p)}`,'error');return;}
   const key=`${p.id}_${unit.name}`;
   const ex=posCart.find(i=>i.key===key);
   if(ex)ex.qty+=qty;else posCart.push({key,productId:p.id,name:p.name,icon:p.icon,unit:unit.name,price:unit.price,qty});
@@ -1416,12 +1464,11 @@ function posCheckout(isDebt){
   };
   DB.invoices.unshift(inv);
   addPriceHistory('selling',inv.items.map(x=>({productId:x.productId,name:x.name,price:x.price,qty:x.qty})),inv.date,inv.id,'invoice');
-  // Update stock (rough: per bag unit)
+  // Trừ kho theo đơn vị gốc (bán lẻ kg chỉ trừ đúng phần lẻ của bao)
   posCart.forEach(item=>{
     const p=DB.products.find(x=>x.id===item.productId);
     if(p){
-      const u=p.units.find(u=>u.name===item.unit);
-      p.stock-=Math.ceil(item.qty/(u?.ratio||1));
+      p.stock=round3((p.stock||0)-toBaseQty(p,item.qty,item.unit));
       if(p.stock<0)p.stock=0;
     }
   });
@@ -1483,7 +1530,7 @@ function renderAdminDash(c){
       <div class="card">
         <div class="card-header">⚠️ Sắp hết hàng</div>
         <div class="card-body">
-          ${lowStock.length?lowStock.map(p=>`<div style="display:flex;justify-content:space-between;align-items:center;padding:7px 0;border-bottom:1px solid var(--border)"><div style="font-size:13px;font-weight:600">${p.icon} ${p.name}</div><span class="badge badge-red">Còn ${p.stock}</span></div>`).join('')
+          ${lowStock.length?lowStock.map(p=>`<div style="display:flex;justify-content:space-between;align-items:center;padding:7px 0;border-bottom:1px solid var(--border)"><div style="font-size:13px;font-weight:600">${p.icon} ${p.name}</div><span class="badge badge-red">Còn ${fmtStock(p)}</span></div>`).join('')
           :'<div class="text-center text-muted" style="padding:20px">✅ Đủ hàng</div>'}
         </div>
       </div>
@@ -1519,7 +1566,7 @@ function renderAdminProductsTable(){
       <td>${idx}</td>
       <td><div style="font-weight:700;display:flex;align-items:center;gap:6px">${p.image?`<img src="${p.image}" style="width:30px;height:30px;object-fit:cover;border-radius:8px;flex-shrink:0"/>`:p.icon}<span>${p.name}</span></div><div class="text-xs text-muted">${p.sku} | ${p.cat}</div></td>
       <td>${p.units.map(u=>`<span class="badge badge-gray" style="margin:1px">${u.name}: ${fmtK(u.price)}</span>`).join('')}</td>
-      <td class="${p.stock<=p.minStock?'text-red font-bold':'text-green'}">${p.stock} ${p.stock<=p.minStock?'⚠️':''}</td>
+      <td class="${p.stock<=p.minStock?'text-red font-bold':'text-green'}">${fmtStock(p)} ${p.stock<=p.minStock?'⚠️':''}</td>
       <td>${fmtK(p.cost)}</td>
       <td><span class="badge ${p.stock<=p.minStock?'badge-red':'badge-green'}">${p.stock<=p.minStock?'Sắp hết':'Còn hàng'}</span></td>
       <td><div style="display:flex;gap:4px">
@@ -1597,11 +1644,12 @@ function showAddProduct(){
         <div class="form-group"><label>Nhà cung cấp</label><input class="form-control" id="np-sup"/></div>
       </div>
       <div class="grid-2 mt-12">
-        <div class="form-group"><label>Tồn kho</label><input class="form-control" type="text" inputmode="numeric" id="np-stock" placeholder="0" oninput="filterNumInput(this,false)"/></div>
+        <div class="form-group"><label>Tồn kho</label><input class="form-control" type="text" inputmode="decimal" id="np-stock" placeholder="0" oninput="filterNumInput(this,true)"/></div>
         <div class="form-group"><label>Tồn tối thiểu</label><input class="form-control" type="text" inputmode="numeric" id="np-min" placeholder="10" oninput="filterNumInput(this,false)"/></div>
       </div>
       ${prodImageInputHTML()}
       <div style="margin-top:16px;font-weight:700;font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.4px">Đơn vị bán (thêm nhiều loại)</div>
+      <div class="text-xs text-muted" style="margin-top:4px">Dòng đầu là đơn vị gốc, "Quy đổi" = 1 (tồn kho đếm theo đơn vị này). Bán lẻ theo kg thì thêm dòng: tên <strong>Kg</strong>, quy đổi <strong>50</strong> nếu 1 bao = 50 kg.</div>
       <div id="units-container" style="margin-top:8px"></div>
       <button class="btn btn-outline btn-sm mt-8" onclick="addUnitRow()">+ Thêm đơn vị</button>
     </div>
@@ -1670,11 +1718,12 @@ function showEditProduct(id){
         <div class="form-group"><label>Nhà cung cấp</label><input class="form-control" id="ep-sup" value="${p.supplier}"/></div>
       </div>
       <div class="grid-2 mt-12">
-        <div class="form-group"><label>Tồn kho</label><input class="form-control" type="text" inputmode="numeric" id="ep-stock" value="${p.stock}" oninput="filterNumInput(this,false)"/></div>
+        <div class="form-group"><label>Tồn kho (theo ${shortUnitName((baseUnitOf(p)||{}).name||'đơn vị gốc')}, cho phép số lẻ)</label><input class="form-control" type="text" inputmode="decimal" id="ep-stock" value="${p.stock}" oninput="filterNumInput(this,true)" title="Bán lẻ theo kg sẽ sinh ra số lẻ, ví dụ 14.7 = 14 bao 35 kg"/></div>
         <div class="form-group"><label>Tồn tối thiểu</label><input class="form-control" type="text" inputmode="numeric" id="ep-min" value="${p.minStock}" oninput="filterNumInput(this,false)"/></div>
       </div>
       ${prodImageInputHTML()}
       <div style="margin-top:16px;font-weight:700;font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.4px">Đơn vị bán</div>
+      <div class="text-xs text-muted" style="margin-top:4px">Dòng đầu là đơn vị gốc, "Quy đổi" = 1 (tồn kho đếm theo đơn vị này). Bán lẻ theo kg thì thêm dòng: tên <strong>Kg</strong>, quy đổi <strong>50</strong> nếu 1 bao = 50 kg.</div>
       <div id="edit-units-container" style="margin-top:8px"></div>
       <button class="btn btn-outline btn-sm mt-8" onclick="addEditUnitRow()">+ Thêm đơn vị</button>
       <div style="margin-top:16px;font-weight:700;font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.4px">Lịch sử nhập</div>
@@ -1743,7 +1792,7 @@ function renderAdminInventory(c){
       <div class="card-header">📦 Tồn kho hiện tại</div>
       <div class="tbl-wrap"><table>
         <thead><tr><th>Sản phẩm</th><th>Đơn vị</th><th>Tồn kho</th><th>Tối thiểu</th><th>Trạng thái</th></tr></thead>
-        <tbody>${DB.products.map(p=>`<tr><td><strong>${p.icon} ${p.name}</strong></td><td>${p.units.map(u=>u.name).join(', ')}</td><td class="${p.stock<=p.minStock?'text-red font-bold':'text-green'}">${p.stock}</td><td>${p.minStock}</td><td><span class="badge ${p.stock<=p.minStock?'badge-red':'badge-green'}">${p.stock<=p.minStock?'⚠️ Sắp hết':'✅ Đủ'}</span></td></tr>`).join('')}
+        <tbody>${DB.products.map(p=>`<tr><td><strong>${p.icon} ${p.name}</strong></td><td>${p.units.map(u=>u.name).join(', ')}</td><td class="${p.stock<=p.minStock?'text-red font-bold':'text-green'}">${fmtStock(p)}</td><td>${p.minStock}</td><td><span class="badge ${p.stock<=p.minStock?'badge-red':'badge-green'}">${p.stock<=p.minStock?'⚠️ Sắp hết':'✅ Đủ'}</span></td></tr>`).join('')}
         </tbody>
       </table></div>
     </div>
@@ -2481,7 +2530,9 @@ function calculateFIFOCost(items){
       const profit=(it.price-it.costPrice)*it.qty;
       return{...it,costPrice:it.costPrice,profit:Math.round(profit),profitMargin:it.price>0?((it.price-it.costPrice)/it.price*100).toFixed(1)+'%':'0%'};
     }
-    let remaining=it.qty;
+    // Lô nhập tính theo đơn vị gốc (bao) -> phải quy số lượng bán về đơn vị gốc rồi mới trừ lô
+    const p=DB.products.find(x=>x.id===it.productId);
+    let remaining=toBaseQty(p,it.qty,it.unit);
     let totalCost=0;
     let costPrice=0;
 
@@ -2565,7 +2616,7 @@ function showDailySalesForm(editId){
   // Bản ghi cũ lưu costPrice=0 -> điền giá vốn gợi ý để sửa/lưu lại cho đúng
   dailySalesCart.forEach(it=>{
     if(!(it.costPrice>0)){
-      it.costPrice=dsDefaultCost(it.productId);
+      it.costPrice=dsDefaultCost(it.productId,it.unit);
       it.profit=Math.round((it.price-it.costPrice)*it.qty);
     }
   });
@@ -2636,8 +2687,9 @@ function dsSearchProd(q){
   el.style.display='block';
 }
 
-// Giá vốn gợi ý: lô nhập cũ nhất, không có thì lấy giá vốn của sản phẩm
-function dsDefaultCost(productId){
+// Giá vốn gợi ý: lô nhập cũ nhất, không có thì lấy giá vốn của sản phẩm.
+// Giá vốn trong phiếu nhập là giá của 1 đơn vị gốc (1 bao) -> bán lẻ Kg phải chia theo ratio.
+function dsDefaultCost(productId,unitName){
   const lots=[];
   (DB.stockImports||[]).forEach(imp=>{
     (imp.items||[]).forEach(item=>{
@@ -2645,9 +2697,19 @@ function dsDefaultCost(productId){
     });
   });
   lots.sort((a,b)=>(a.importDate||'').localeCompare(b.importDate||''));
-  if(lots.length)return lots[0].cost;
   const p=DB.products.find(x=>x.id===productId);
-  return p?.cost||0;
+  const giaGoc=lots.length?lots[0].cost:(p?.cost||0);
+  return costPerUnit(giaGoc,p,unitName);
+}
+
+// Điền giá vốn + giá bán gợi ý theo đơn vị đang chọn (Bao hay Kg)
+function dsFillUnitPrices(productId,unitName){
+  const p=DB.products.find(x=>x.id===productId);if(!p)return;
+  const costEl=document.getElementById('ds-cost');
+  if(costEl)costEl.value=dsDefaultCost(productId,unitName)||'';
+  const priceEl=document.getElementById('ds-price');
+  const u=unitOf(p,unitName);
+  if(priceEl&&u)priceEl.value=u.price||'';
 }
 
 // Sửa giá vốn của 1 dòng đã có trong giỏ
@@ -2666,10 +2728,10 @@ function dsPickProd(id){
   const sel=document.getElementById('ds-unit');
   if(sel){
     sel.innerHTML=p.units.map((u,i)=>`<option value="${u.name}" data-price="${u.price}" ${i===0?'selected':''}>${u.name}</option>`).join('');
-    sel.onchange=function(){};
+    // Đổi đơn vị (Bao <-> Kg) thì giá vốn và giá bán gợi ý phải đổi theo
+    sel.onchange=function(){dsFillUnitPrices(id,this.value);};
   }
-  const costEl=document.getElementById('ds-cost');
-  if(costEl)costEl.value=dsDefaultCost(id)||'';
+  dsFillUnitPrices(id,sel?.value||'');
   const ac=document.getElementById('ds-ac');if(ac){ac.style.display='none';ac.innerHTML='';}
   const qty=document.getElementById('ds-qty');if(qty)qty.focus();
 }
@@ -2739,10 +2801,22 @@ function saveDailySales(editId){
 
   // Kiểm tra tồn kho đủ không (cảnh báo)
   const warnings=[];
+  const canTruTheoSP={};
   items.forEach(it=>{
     const p=DB.products.find(x=>x.id===it.productId);
-    if(p&&p.stock<it.qty){
-      warnings.push(`⚠️ ${it.name}: tồn ${p.stock}, bán ${it.qty}`);
+    if(!p)return;
+    canTruTheoSP[p.id]=(canTruTheoSP[p.id]||0)+toBaseQty(p,it.qty,it.unit);
+  });
+  Object.keys(canTruTheoSP).forEach(pid=>{
+    const p=DB.products.find(x=>x.id===pid);
+    // Khi sửa, phần đã trừ của bản ghi cũ sẽ được hoàn lại trước -> cộng vào tồn để so cho đúng
+    let tonCoTheDung=p.stock||0;
+    if(editId){
+      const e=DB.dailySales.find(x=>x.id===editId);
+      (e?.items||[]).forEach(it=>{if(it.productId===pid)tonCoTheDung+=toBaseQty(p,it.qty,it.unit);});
+    }
+    if(tonCoTheDung<canTruTheoSP[pid]-1e-6){
+      warnings.push(`⚠️ ${p.name}: tồn ${fmtStock(p)}, bán ${fmtQty(canTruTheoSP[pid])} ${shortUnitName((baseUnitOf(p)||{}).name||'')}`);
     }
   });
   if(warnings.length&&!confirm('Cảnh báo tồn kho không đủ:\n'+warnings.join('\n')+'\n\nVẫn lưu không?')){
@@ -2753,10 +2827,10 @@ function saveDailySales(editId){
   if(editId){
     const e=DB.dailySales.find(x=>x.id===editId);
     if(!e){toast('Không tìm thấy ghi chép!','error');return;}
-    // Restore kho
+    // Restore kho (quy đổi về đơn vị gốc)
     (e.items||[]).forEach(it=>{
       const p=DB.products.find(x=>x.id===it.productId);
-      if(p)p.stock+=it.qty;
+      if(p)p.stock=round3((p.stock||0)+toBaseQty(p,it.qty,it.unit));
     });
     // Hoàn lại doanh thu + nợ của khách cũ (khối cộng lại nằm ở cuối hàm)
     const oldCust=findEntryCustomer(e);
@@ -2784,10 +2858,10 @@ function saveDailySales(editId){
     addPriceHistory('selling',entry.items.map(x=>({productId:x.productId,name:x.name,price:x.price,qty:x.qty})),date,entry.id,'dailySales');
   }
 
-  // Trừ kho
+  // Trừ kho — quy đổi theo đơn vị: bán 15 Kg chỉ trừ 15/50 = 0,3 bao
   items.forEach(it=>{
     const p=DB.products.find(x=>x.id===it.productId);
-    if(p)p.stock-=it.qty;
+    if(p)p.stock=round3((p.stock||0)-toBaseQty(p,it.qty,it.unit));
   });
 
   // Cập nhật thông tin khách hàng (nếu không phải khách vãng lai)
@@ -2845,10 +2919,10 @@ function deleteDailySales(id){
   if(dropCust)msg+=`\n\nKhách "${cust.name}" không còn ghi chép nào khác → sẽ bị xóa khỏi danh sách khách hàng.`;
   if(!confirm(msg))return;
 
-  // Restore kho
+  // Restore kho (quy đổi về đơn vị gốc)
   (entry.items||[]).forEach(it=>{
     const p=DB.products.find(x=>x.id===it.productId);
-    if(p)p.stock+=it.qty;
+    if(p)p.stock=round3((p.stock||0)+toBaseQty(p,it.qty,it.unit));
   });
   // Trả lại doanh thu + nợ, hoặc xóa hẳn khách
   if(cust){
@@ -2865,6 +2939,197 @@ function deleteDailySales(id){
   saveDB();
   toast(dropCust?`Đã xóa ghi chép và khách "${cust.name}"`:'Đã xóa ghi chép, restore kho và khách hàng','warning');
   renderDailySalesTable();
+}
+
+/* ---- P4: ĐỐI CHIẾU TỒN KHO ----
+   Tồn lý thuyết được tính LẠI TỪ CHỨNG TỪ (phiếu nhập − hóa đơn − sổ bán hàng),
+   tất cả quy về đơn vị gốc. Nhờ vậy dù con số p.stock đã bị trừ sai trước đây
+   thì bảng này vẫn cho ra số đúng để so với số sư huynh đếm thực tế. */
+let reconInputs={}, reconOnlyDiff=false, reconSearch='';
+
+function reconStats(p){
+  let nhap=0,ban=0;
+  (DB.stockImports||[]).forEach(im=>(im.items||[]).forEach(it=>{
+    if(it.productId===p.id)nhap+=toBaseQty(p,it.qty,it.unit);
+  }));
+  (DB.invoices||[]).forEach(v=>{
+    if(v.status==='cancelled')return;
+    (v.items||[]).forEach(it=>{if(it.productId===p.id)ban+=toBaseQty(p,it.qty,it.unit);});
+  });
+  (DB.dailySales||[]).forEach(s=>(s.items||[]).forEach(it=>{
+    if(it.productId===p.id)ban+=toBaseQty(p,it.qty,it.unit);
+  }));
+  // Đơn online chưa xác nhận thì chưa giao hàng -> chưa tính là đã bán.
+  // Đơn đã xác nhận đã được chuyển thành hóa đơn nên đếm ở phần hóa đơn rồi.
+  return {nhap:round3(nhap),ban:round3(ban),lyThuyet:round3(nhap-ban)};
+}
+
+// Đơn vị lẻ (Kg) của sản phẩm, dùng cho ô nhập "bao + lẻ"
+function reconSubUnit(p){
+  return ((p&&p.units)||[]).filter(u=>+u.ratio>1).sort((a,b)=>b.ratio-a.ratio)[0]||null;
+}
+function reconActual(p){
+  const v=reconInputs[p.id];if(!v)return null;
+  const sBao=String(v.bao==null?'':v.bao).trim(), sLe=String(v.le==null?'':v.le).trim();
+  if(sBao===''&&sLe==='')return null;
+  const sub=reconSubUnit(p);
+  return round3((parseFloat(sBao)||0)+(sub?(parseFloat(sLe)||0)/sub.ratio:0));
+}
+function reconStatus(lyThuyet,thucTe){
+  const d=round3(thucTe-lyThuyet);
+  if(Math.abs(d)<0.005)return{cls:'badge-green',txt:'✅ Khớp',diff:0,pct:0};
+  const mau=Math.abs(lyThuyet)>0.005?Math.abs(lyThuyet):Math.abs(d);
+  const pct=Math.abs(d)/mau*100;
+  if(pct<5)return{cls:'badge-green',txt:'✅ Lệch nhẹ',diff:d,pct};
+  if(pct<=20)return{cls:'badge-amber',txt:'⚠️ Cần kiểm tra',diff:d,pct};
+  return{cls:'badge-red',txt:'❌ Lệch lớn',diff:d,pct};
+}
+
+function renderAdminRecon(c){
+  if(!Array.isArray(DB.inventoryChecks))DB.inventoryChecks=[];
+  c.innerHTML=`
+  <div class="admin-page-header"><span>🔍</span><h1>Đối chiếu tồn kho</h1>
+    <button class="btn btn-green btn-sm" onclick="reconApplyAll()">💾 Cập nhật các dòng đã đếm</button>
+  </div>
+  <div class="page-body-scroll">
+    <div class="alert alert-warn mb-16" style="font-size:12.5px">
+      <strong>Tồn lý thuyết</strong> = tổng nhập − tổng bán, tính lại từ phiếu nhập, hóa đơn và sổ bán hàng
+      (đã quy đổi bao ↔ kg). <strong>Tồn app</strong> là con số app đang giữ — nếu 2 số này lệch nhau nghĩa là
+      tồn kho đã bị trừ sai lúc trước. Đếm thực tế xong, bấm <em>Cập nhật</em> để ghi đè lại tồn kho.
+    </div>
+    <div class="card mb-16"><div class="card-body" style="display:flex;gap:12px;align-items:center;flex-wrap:wrap">
+      <div class="search-wrap"><span class="search-ico">🔍</span>
+        <input id="recon-search" placeholder="Tìm sản phẩm..." value="${reconSearch}" autocomplete="off"
+          oninput="reconSearch=this.value;renderReconTable()"/></div>
+      <label style="display:flex;align-items:center;gap:6px;font-size:13px;font-weight:600;margin:0;cursor:pointer">
+        <input type="checkbox" ${reconOnlyDiff?'checked':''} onchange="reconOnlyDiff=this.checked;renderReconTable()"/>
+        Chỉ hiện SP có chênh lệch
+      </label>
+    </div></div>
+    <div class="card">
+      <div class="card-header">📋 Bảng đối chiếu</div>
+      <div class="tbl-wrap"><table>
+        <thead><tr><th>Sản phẩm</th><th>Tổng nhập</th><th>Đã bán</th><th>Tồn lý thuyết</th><th>Tồn app</th>
+          <th style="min-width:150px">Đếm thực tế</th><th>Chênh lệch</th><th></th></tr></thead>
+        <tbody id="recon-body"></tbody>
+      </table></div>
+    </div>
+    <div class="card mt-16">
+      <div class="card-header">🕘 Lịch sử đối chiếu</div>
+      <div class="tbl-wrap" id="recon-hist"></div>
+    </div>
+  </div>`;
+  renderReconTable();
+  renderReconHist();
+}
+
+function renderReconTable(){
+  const body=document.getElementById('recon-body');if(!body)return;
+  let list=DB.products.filter(p=>matchesSearch(p.name,reconSearch));
+  const rows=[];
+  list.forEach(p=>{
+    const st=reconStats(p);
+    const lech=round3((p.stock||0)-st.lyThuyet);
+    if(reconOnlyDiff&&Math.abs(lech)<0.005&&reconActual(p)===null)return;
+    const sub=reconSubUnit(p);
+    const baseName=shortUnitName((baseUnitOf(p)||{}).name||'');
+    const v=reconInputs[p.id]||{};
+    rows.push(`<tr>
+      <td><strong>${p.icon||'📦'} ${p.name}</strong><div class="text-xs text-muted">${(p.units||[]).map(u=>u.name).join(' · ')}</div></td>
+      <td>${fmtQty(st.nhap)}</td>
+      <td>${fmtQty(st.ban)}</td>
+      <td class="font-bold">${fmtQty(st.lyThuyet)} ${baseName}</td>
+      <td class="${Math.abs(lech)<0.005?'text-muted':'text-red font-bold'}">${fmtStock(p)}</td>
+      <td><div style="display:flex;gap:4px;align-items:center">
+        <input class="form-control" style="width:58px;padding:4px 6px;font-size:12px" inputmode="decimal" placeholder="0"
+          value="${v.bao==null?'':v.bao}" oninput="filterNumInput(this,true);reconSet('${p.id}','bao',this.value)"/>
+        <span class="text-xs text-muted">${baseName}</span>
+        ${sub?`<input class="form-control" style="width:58px;padding:4px 6px;font-size:12px" inputmode="decimal" placeholder="0"
+          value="${v.le==null?'':v.le}" oninput="filterNumInput(this,true);reconSet('${p.id}','le',this.value)"/>
+        <span class="text-xs text-muted">${sub.name}</span>`:''}
+      </div></td>
+      <td id="recon-diff-${p.id}">${reconDiffCellHTML(p)}</td>
+      <td><button class="btn btn-green btn-sm" onclick="reconApply('${p.id}')">Cập nhật</button></td>
+    </tr>`);
+  });
+  body.innerHTML=rows.length?rows.join(''):'<tr><td colspan="8" class="text-center text-muted" style="padding:16px">Không có sản phẩm nào</td></tr>';
+}
+
+function reconDiffCellHTML(p){
+  const actual=reconActual(p);
+  if(actual===null)return'<span class="text-muted text-xs">chưa đếm</span>';
+  const st=reconStats(p);
+  const s=reconStatus(st.lyThuyet,actual);
+  const dau=s.diff>0?'+':'';
+  return `<span class="badge ${s.cls}">${s.txt}</span>
+    <div class="text-xs ${s.diff>0?'text-green':(s.diff<0?'text-red':'text-muted')}" style="margin-top:2px">
+      ${dau}${fmtQty(s.diff)} ${shortUnitName((baseUnitOf(p)||{}).name||'')}${s.diff?` (${s.pct.toFixed(1)}%)`:''}</div>`;
+}
+
+function reconSet(pid,field,val){
+  if(!reconInputs[pid])reconInputs[pid]={};
+  reconInputs[pid][field]=val;
+  const p=DB.products.find(x=>x.id===pid);
+  const cell=document.getElementById('recon-diff-'+pid);
+  if(p&&cell)cell.innerHTML=reconDiffCellHTML(p);
+}
+
+function reconApply(pid){
+  const p=DB.products.find(x=>x.id===pid);if(!p)return;
+  const actual=reconActual(p);
+  if(actual===null){toast('Nhập số đếm thực tế trước!','error');return;}
+  if(actual<0){toast('Số lượng không hợp lệ!','error');return;}
+  const st=reconStats(p);
+  const cu=p.stock||0;
+  if(!confirm(`Cập nhật tồn kho "${p.name}"\n\nTồn app hiện tại: ${fmtStock(p)}\nTồn lý thuyết: ${fmtQty(st.lyThuyet)}\nĐếm thực tế: ${fmtQty(actual)}\n\nSẽ ghi đè tồn kho thành số đếm thực tế. Đồng ý?`))return;
+  p.stock=round3(actual);
+  DB.inventoryChecks=Array.isArray(DB.inventoryChecks)?DB.inventoryChecks:[];
+  DB.inventoryChecks.unshift({
+    id:'DC'+uid(),date:today(),time:new Date().toTimeString().slice(0,5),
+    productId:p.id,productName:p.name,unit:(baseUnitOf(p)||{}).name||'',
+    theoQty:st.lyThuyet,appQty:cu,actualQty:round3(actual),diff:round3(actual-st.lyThuyet)
+  });
+  delete reconInputs[pid];
+  saveDB();
+  toast(`Đã cập nhật tồn "${p.name}" → ${fmtStock(p)}`);
+  renderReconTable();renderReconHist();
+}
+
+function reconApplyAll(){
+  const canApply=DB.products.filter(p=>reconActual(p)!==null&&reconActual(p)>=0);
+  if(!canApply.length){toast('Chưa có dòng nào được đếm!','error');return;}
+  const dong=canApply.map(p=>`• ${p.name}: ${fmtStock(p)} → ${fmtQty(reconActual(p))}`).join('\n');
+  if(!confirm(`Cập nhật tồn kho cho ${canApply.length} sản phẩm:\n\n${dong}\n\nĐồng ý ghi đè?`))return;
+  DB.inventoryChecks=Array.isArray(DB.inventoryChecks)?DB.inventoryChecks:[];
+  canApply.forEach(p=>{
+    const st=reconStats(p),actual=reconActual(p),cu=p.stock||0;
+    p.stock=round3(actual);
+    DB.inventoryChecks.unshift({
+      id:'DC'+uid(),date:today(),time:new Date().toTimeString().slice(0,5),
+      productId:p.id,productName:p.name,unit:(baseUnitOf(p)||{}).name||'',
+      theoQty:st.lyThuyet,appQty:cu,actualQty:round3(actual),diff:round3(actual-st.lyThuyet)
+    });
+    delete reconInputs[p.id];
+  });
+  saveDB();
+  toast(`Đã cập nhật tồn kho ${canApply.length} sản phẩm`);
+  renderReconTable();renderReconHist();
+}
+
+function renderReconHist(){
+  const el=document.getElementById('recon-hist');if(!el)return;
+  const list=(DB.inventoryChecks||[]).slice(0,30);
+  if(!list.length){el.innerHTML='<div class="text-center text-muted" style="padding:16px;font-size:13px">Chưa có lần đối chiếu nào</div>';return;}
+  el.innerHTML=`<table>
+    <thead><tr><th>Ngày</th><th>Sản phẩm</th><th>Lý thuyết</th><th>Tồn app lúc đó</th><th>Đếm thực tế</th><th>Chênh lệch</th></tr></thead>
+    <tbody>${list.map(h=>`<tr>
+      <td>${fmtD(h.date)}${h.time?` ${h.time}`:''}</td>
+      <td>${h.productName||''}</td>
+      <td>${fmtQty(h.theoQty)}</td>
+      <td>${fmtQty(h.appQty)}</td>
+      <td class="font-bold">${fmtQty(h.actualQty)} ${shortUnitName(h.unit||'')}</td>
+      <td class="${(h.diff||0)>0?'text-green':((h.diff||0)<0?'text-red':'text-muted')}">${(h.diff||0)>0?'+':''}${fmtQty(h.diff)}</td>
+    </tr>`).join('')}</tbody></table>`;
 }
 
 /* ---- PRICE HISTORY (Lịch sử giá theo ngày) ---- */
@@ -3109,10 +3374,7 @@ function deleteInvoice(id){
   }
   inv.items.forEach(item=>{
     const p=DB.products.find(x=>x.id===item.productId);
-    if(p){
-      const u=p.units.find(u=>u.name===item.unit);
-      p.stock+=Math.ceil(item.qty/(u?.ratio||1));
-    }
+    if(p)p.stock=round3((p.stock||0)+toBaseQty(p,item.qty,item.unit));
   });
   if(inv.debt>0&&inv.customerId){
     const cu=DB.customers.find(x=>x.id===inv.customerId);
@@ -3374,7 +3636,7 @@ document.getElementById('zalo-btn').addEventListener('mouseleave',()=>document.g
 
 <!-- Đồng bộ dữ liệu qua Supabase -->
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="js/supabase-sync.js?v=3"></script>
+<script src="js/supabase-sync.js?v=4"></script>
 
 <script src="./realtime-sync.js"></script></body>
 </html>

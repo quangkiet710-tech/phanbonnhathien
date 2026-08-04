@@ -27,7 +27,7 @@
   const MAX_BACKUPS = 4;
 
   // Các bảng dữ liệu dạng mảng có khoá 'id'
-  const COLLECTIONS = ['products', 'customers', 'invoices', 'stockImports', 'custOrders', 'dailySales', 'priceHistory'];
+  const COLLECTIONS = ['products', 'customers', 'invoices', 'stockImports', 'custOrders', 'dailySales', 'priceHistory', 'inventoryChecks'];
 
   const SEED_CUSTOMER_IDS = 'c1,c2,c3';
   const SEED_PRODUCT_IDS = 'p1,p2,p3,p4,p5,p6,p7,p8';
