@@ -302,6 +302,8 @@ tr:hover td{background:var(--g50);}
 .bar-fill{background:linear-gradient(to top,var(--g800),var(--g600));border-radius:4px 4px 0 0;width:100%;min-height:3px;transition:.3s;}
 .bar-lbl{font-size:9.5px;color:var(--muted);font-weight:700;margin-top:2px;}
 .bar-val-txt{font-size:9px;color:var(--muted);font-weight:700;}
+/* Lãi mỏng hơn doanh thu cả trăm lần nên không vẽ cột riêng được, ghi thành số */
+.bar-profit-txt{font-size:8.5px;font-weight:800;line-height:1;}
 
 /* MOBILE SIDEBAR TOGGLE */
 .sidebar-toggle{display:none;width:36px;height:36px;background:rgba(255,255,255,.15);border:none;color:#fff;border-radius:8px;cursor:pointer;font-size:18px;align-items:center;justify-content:center;}
@@ -600,6 +602,13 @@ function fmtK(n){
   const v=n||0,a=Math.abs(v);
   const k=Math.round(a/1000*1000)/1000;
   return (v<0?'-':'')+String(k).replace('.',',')+'k';
+}
+// Số gọn cho biểu đồ: 185887000 -> "185,9tr". Dạng "k" sẽ ra "185887k", không đọc nổi.
+function fmtGon(n){
+  const v=+n||0,a=Math.abs(v),d=v<0?'-':'';
+  if(a>=1e6)return d+String(Math.round(a/1e5)/10).replace('.',',')+'tr';
+  if(a>=1000)return d+String(Math.round(a/100)/10).replace('.',',')+'k';
+  return d+String(Math.round(a));
 }
 function fmtD(d){if(!d)return'';return new Date(d).toLocaleDateString('vi-VN');}
 function uid(){return Date.now().toString(36)+Math.random().toString(36).slice(2,5);}
@@ -1496,9 +1505,31 @@ function renderAdminDash(c){
   const todayDailyProfit=todayDailySales.reduce((s,e)=>s+sumProfit(e.items,'ds|'+e.id),0);
   const totalDailyRevenue=todayDailySales.reduce((s,e)=>s+(e.totalAmount||0),0);
   const totalDailyProfit=(DB.dailySales||[]).reduce((s,e)=>s+sumProfit(e.items,'ds|'+e.id),0);
+  // Doanh thu cả sổ bán hàng — cửa hàng ghi sổ là chính nên không thể chỉ đếm hóa đơn POS
+  const totalDailyRev=(DB.dailySales||[]).reduce((s,e)=>s+(e.totalAmount||0),0);
 
   const months=['T1','T2','T3','T4','T5','T6','T7','T8','T9','T10','T11','T12'];
-  const mData=months.map((_,mi)=>DB.invoices.filter(i=>new Date(i.date).getMonth()===mi).reduce((s,i)=>s+i.paid,0));
+  // Doanh thu phải gộp cả sổ bán hàng, không chỉ hóa đơn POS — cửa hàng ghi sổ tay
+  // là chính nên trước đây biểu đồ trống trơn dù sổ đã có hàng trăm ghi chép.
+  const nam=new Date().getFullYear();
+  const thangCua=d=>{
+    const s=String(d||'');
+    if(s.slice(0,4)!==String(nam))return-1;      // chỉ lấy năm đang xem
+    const m=+s.slice(5,7);
+    return m>=1&&m<=12?m-1:-1;
+  };
+  const mData=months.map(()=>0),mProfit=months.map(()=>0);
+  DB.invoices.forEach(i=>{
+    if(i.status==='cancelled')return;
+    const m=thangCua(i.date);if(m<0)return;
+    mData[m]+=i.paid||0;
+    mProfit[m]+=sumProfit(i.items,'inv|'+i.id);
+  });
+  (DB.dailySales||[]).forEach(s=>{
+    const m=thangCua(s.date);if(m<0)return;
+    mData[m]+=s.totalAmount||0;
+    mProfit[m]+=sumProfit(s.items,'ds|'+s.id);
+  });
   const maxV=Math.max(...mData,1);
 
   c.innerHTML=`
@@ -1506,7 +1537,7 @@ function renderAdminDash(c){
   <div class="page-body-scroll">
     <div class="stat-grid">
       <div class="stat-card"><div class="s-icon-wrap">💰</div><div class="s-label">HĐ hôm nay</div><div class="s-val" style="font-size:17px;color:var(--g800)">${fmt(todayRev)}</div><div class="s-sub">${todayInvs.length} hóa đơn</div></div>
-      <div class="stat-card"><div class="s-icon-wrap">📈</div><div class="s-label">Tổng DT</div><div class="s-val" style="font-size:17px">${fmt(totalRev)}</div><div class="s-sub">${DB.invoices.length} HĐ</div></div>
+      <div class="stat-card"><div class="s-icon-wrap">📈</div><div class="s-label">Tổng DT</div><div class="s-val" style="font-size:17px">${fmt(totalRev+totalDailyRev)}</div><div class="s-sub">${DB.invoices.length} HĐ + ${(DB.dailySales||[]).length} sổ</div></div>
       <div class="stat-card"><div class="s-icon-wrap">💳</div><div class="s-label">Công nợ</div><div class="s-val" style="font-size:17px;color:var(--red)">${fmtK(totalDebt)}</div><div class="s-sub">${DB.customers.filter(c=>c.debt>0).length} khách</div></div>
       <div class="stat-card"><div class="s-icon-wrap">📦</div><div class="s-label">Đơn chờ</div><div class="s-val" style="color:${pendingOrders.length?'var(--amber)':'var(--g800)'}">${pendingOrders.length}</div><div class="s-sub">Cần xử lý</div></div>
       <div class="stat-card"><div class="s-icon-wrap">📝</div><div class="s-label">Sổ hôm nay</div><div class="s-val" style="font-size:17px;color:var(--g800)">${fmtK(totalDailyRevenue)}</div><div class="s-sub">${todayDailySales.length} ghi chép</div></div>
@@ -1519,14 +1550,19 @@ function renderAdminDash(c){
 
     <div style="display:grid;grid-template-columns:2fr 1fr;gap:16px;margin-bottom:16px">
       <div class="card">
-        <div class="card-header">📊 Doanh thu ${new Date().getFullYear()}</div>
+        <div class="card-header">📊 Doanh thu &amp; lãi ${nam}</div>
         <div style="padding:16px">
           <div class="bar-chart">
-            ${mData.map((v,i)=>`<div class="bar-col">
-              <div class="bar-val-txt">${v>0?fmt(v).replace('đ','').replace(/\./g,'').slice(0,-3)+'k':''}</div>
+            ${mData.map((v,i)=>`<div class="bar-col" title="${months[i]}/${nam}&#10;Doanh thu: ${fmt(v)}&#10;Lãi: ${mProfit[i]>=0?'+':''}${fmt(mProfit[i])}">
+              <div class="bar-val-txt">${v>0?fmtGon(v):''}</div>
+              <div class="bar-profit-txt" style="color:${mProfit[i]>=0?'var(--g800)':'var(--red)'}">${v>0?(mProfit[i]>=0?'+':'')+fmtGon(mProfit[i]):''}</div>
               <div class="bar-fill" style="height:${Math.max(2,(v/maxV)*100)}%"></div>
               <div class="bar-lbl">${months[i]}</div>
             </div>`).join('')}
+          </div>
+          <div style="display:flex;gap:14px;justify-content:center;margin-top:10px;font-size:11px;color:var(--muted);font-weight:600">
+            <span>Cột: doanh thu</span><span style="color:var(--g800)">Số xanh: lãi</span>
+            <span>Cả năm: <strong>${fmt(mData.reduce((a,b)=>a+b,0))}</strong> — lãi <strong style="color:${mProfit.reduce((a,b)=>a+b,0)>=0?'var(--g800)':'var(--red)'}">${fmt(mProfit.reduce((a,b)=>a+b,0))}</strong></span>
           </div>
         </div>
       </div>
