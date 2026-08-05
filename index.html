@@ -556,7 +556,8 @@ const DEFAULT = {
 };
 
 function loadDB(){try{const r=localStorage.getItem(KEY);if(r)return JSON.parse(r);}catch(e){}return JSON.parse(JSON.stringify(DEFAULT));}
-function saveDB(){localStorage.setItem(KEY,JSON.stringify(DB));}
+// Dữ liệu đổi thì sổ cái FIFO phải tính lại (gọi sau khi đã lưu xong cho chắc)
+function saveDB(){localStorage.setItem(KEY,JSON.stringify(DB));try{fifoInvalidate();}catch(e){}}
 let DB=loadDB();
 
 // Móc nối cho js/supabase-sync.js: nhận dữ liệu đã GỘP từ thiết bị khác mà
@@ -564,6 +565,7 @@ let DB=loadDB();
 window.__syncApplyDB=function(data){
   if(!data||typeof data!=='object')return;
   DB=data;
+  try{fifoInvalidate();}catch(e){}
   try{if(typeof adminPage!=='undefined'&&document.getElementById('admin-content'))showAdminPage(adminPage);}catch(e){}
   try{toast('Đã nhận dữ liệu mới từ thiết bị khác','info');}catch(e){}
 };
@@ -636,7 +638,7 @@ function toast(msg,type='success'){
 }
 
 function showModal(html){document.getElementById('modal-root').innerHTML=`<div class="modal-overlay" onclick="if(event.target===this)closeModal()">${html}</div>`;}
-function closeModal(){document.getElementById('modal-root').innerHTML='';}
+function closeModal(){document.getElementById('modal-root').innerHTML='';try{_dsEditingId='';}catch(e){}}
 
 // ============================================================
 // CLOCK
@@ -1459,7 +1461,8 @@ function posCheckout(isDebt){
   const inv={
     id:'HD'+Date.now().toString().slice(-6),date:today(),
     customerId:posCustomerId,customerName:customer?.name||'Khách lẻ',
-    items:posCart.map(i=>({productId:i.productId,name:i.name,qty:i.qty,unit:i.unit,price:i.price})),
+    // Chốt luôn giá vốn theo lô đang bán tới, để lãi/lỗ của hóa đơn này không bị tính lại về sau
+    items:fifoStampCost(posCart.map(i=>({productId:i.productId,name:i.name,qty:i.qty,unit:i.unit,price:i.price}))),
     total,paid:cash,debt,status:debt>0?'partial':'paid'
   };
   DB.invoices.unshift(inv);
@@ -1490,9 +1493,9 @@ function renderAdminDash(c){
   const pendingOrders=DB.custOrders.filter(o=>o.status==='pending');
   const today_=today();
   const todayDailySales=(DB.dailySales||[]).filter(s=>s.date===today_);
-  const todayDailyProfit=todayDailySales.reduce((s,e)=>s+sumProfit(e.items),0);
+  const todayDailyProfit=todayDailySales.reduce((s,e)=>s+sumProfit(e.items,'ds|'+e.id),0);
   const totalDailyRevenue=todayDailySales.reduce((s,e)=>s+(e.totalAmount||0),0);
-  const totalDailyProfit=(DB.dailySales||[]).reduce((s,e)=>s+sumProfit(e.items),0);
+  const totalDailyProfit=(DB.dailySales||[]).reduce((s,e)=>s+sumProfit(e.items,'ds|'+e.id),0);
 
   const months=['T1','T2','T3','T4','T5','T6','T7','T8','T9','T10','T11','T12'];
   const mData=months.map((_,mi)=>DB.invoices.filter(i=>new Date(i.date).getMonth()===mi).reduce((s,i)=>s+i.paid,0));
@@ -1883,7 +1886,14 @@ function saveImport(){
     items:valid.map(i=>{const p=DB.products.find(x=>x.id===i.productId);return{productId:i.productId,name:p?.name||'',qty:i.qty,cost:i.cost};}),total,paid:0,debt:total};
   DB.stockImports.unshift(imp);
   addPriceHistory('cost',imp.items.map(x=>({productId:x.productId,name:x.name,price:x.cost,qty:x.qty})),date,imp.id,'stockImport');
-  valid.forEach(item=>{const p=DB.products.find(x=>x.id===item.productId);if(p){p.stock+=item.qty;p.cost=item.cost;}});
+  valid.forEach(item=>{const p=DB.products.find(x=>x.id===item.productId);if(p)p.stock+=item.qty;});
+  // Giá vốn SP = bình quân của hàng ĐANG CÒN trong kho, không phải giá lô mới nhất
+  fifoInvalidate();
+  valid.forEach(item=>{
+    const p=DB.products.find(x=>x.id===item.productId);
+    const avg=p?fifoAvgCost(p.id):null;
+    if(p&&avg!==null)p.cost=avg;
+  });
   saveDB();closeModal();toast(`Nhập kho thành công! ${fmt(total)}`);
   renderAdminInventory(document.getElementById('admin-content'));
 }
@@ -1915,13 +1925,12 @@ function deleteImport(id){
   // 3. bỏ phiếu (công nợ NCC tự tính lại từ danh sách phiếu nên không cần sửa tay)
   markDeleted('stockImports',id);
   DB.stockImports=(DB.stockImports||[]).filter(x=>x.id!==id);
-  // 4. giá vốn đã bị phiếu này ghi đè -> trả về theo phiếu nhập còn lại gần nhất
+  // 4. tính lại giá vốn theo các lô còn lại sau khi đã bỏ phiếu này
+  fifoInvalidate();
   (imp.items||[]).forEach(item=>{
-    const prev=(DB.stockImports||[]).find(i=>(i.items||[]).some(x=>x.productId===item.productId));
-    if(!prev)return;
-    const line=prev.items.find(x=>x.productId===item.productId);
     const p=DB.products.find(x=>x.id===item.productId);
-    if(p&&line&&line.cost)p.cost=line.cost;
+    const avg=p?fifoAvgCost(p.id):null;
+    if(p&&avg!==null)p.cost=avg;
   });
   saveDB();toast('Đã xóa phiếu nhập','warning');
   renderAdminInventory(document.getElementById('admin-content'));
@@ -2073,7 +2082,6 @@ function runBatchImport(){
     const existing=DB.products.find(p=>stripDiacritics(p.name)===stripDiacritics(name));
     if(existing){
       existing.stock+=qty;
-      existing.cost=cost;
       if(price>0){existing.price=price;if(existing.units&&existing.units[0])existing.units[0].price=price;}
       cntDup++;
       impItems.push({productId:existing.id,name:existing.name,qty,cost});
@@ -2099,6 +2107,13 @@ function runBatchImport(){
   };
   DB.stockImports.unshift(bImp);
   addPriceHistory('cost',bImp.items.map(x=>({productId:x.productId,name:x.name,price:x.cost,qty:x.qty})),bImp.date,bImp.id,'stockImport');
+  // Giá vốn SP = bình quân của hàng đang còn trong kho (tính sau khi lô mới đã vào sổ)
+  fifoInvalidate();
+  bImp.items.forEach(item=>{
+    const p=DB.products.find(x=>x.id===item.productId);
+    const avg=p?fifoAvgCost(p.id):null;
+    if(p&&avg!==null)p.cost=avg;
+  });
   saveDB();
   toast(`Đã nhập: ${cntNew} món mới, ${cntDup} món cộng kho`);
   renderBatchImport(document.getElementById('admin-content'));
@@ -2315,7 +2330,7 @@ function showCustomerDetail(custId){
   const cu=DB.customers.find(x=>x.id===custId);if(!cu)return;
   const sales=(DB.dailySales||[]).filter(s=>(s.customerId===custId&&s.customerName===cu.name)||(!s.customerId&&s.customerName===cu.name));
   const totalBuy=sales.reduce((s,e)=>s+(e.totalAmount||0),0);
-  const totalProfit=sales.reduce((s,e)=>s+sumProfit(e.items),0);
+  const totalProfit=sales.reduce((s,e)=>s+sumProfit(e.items,'ds|'+e.id),0);
 
   showModal(`<div class="modal modal-lg">
     <div class="modal-header"><span>👤</span><h2>${cu.name} - Chi tiết</h2><button class="btn btn-ghost btn-icon" onclick="closeModal()">✕</button></div>
@@ -2331,7 +2346,7 @@ function showCustomerDetail(custId){
             <tr style="border-top:1px solid #ddd;font-size:12px">
               <td colspan="6" style="padding:8px;background:#f5f5f5;font-weight:600">${s.date} (${s.time})</td>
             </tr>
-            ${s.items.map(it=>`<tr><td></td><td>${it.icon||'📦'} ${it.name}</td><td>${it.qty} ${it.unit||''}</td><td>${fmtK(it.price)}</td><td class="font-bold">${fmtK(it.qty*it.price)}</td>${profitCell(it)}</tr>`).join('')}
+            ${s.items.map((it,ii)=>`<tr><td></td><td>${it.icon||'📦'} ${it.name}</td><td>${it.qty} ${it.unit||''}</td><td>${fmtK(it.price)}</td><td class="font-bold">${fmtK(it.qty*it.price)}</td>${profitCell(it,'ds|'+s.id+'|'+ii)}</tr>`).join('')}
           `).join(''):'<tr><td colspan="6" class="text-center text-muted" style="padding:20px">Chưa có ghi chép nào</td></tr>'}
           </tbody>
         </table></div>
@@ -2487,68 +2502,176 @@ function processPayDebt(id){
 /* ---- DAILY SALES (Sổ bán hàng) ---- */
 let dailySalesCart=[];
 let dailySalesDate=today();
+// Bản ghi đang mở để sửa — phải loại khỏi sổ cái FIFO, nếu không hàng của nó bị trừ lô 2 lần
+let _dsEditingId='';
 
-// FIFO logic: tính giá vốn từ lô nhập cũ nhất (KHÔNG trừ kho - chỉ ghi nhận bán)
-// Trả về null nếu không đủ dữ liệu để biết giá vốn (chưa có phiếu nhập nào)
-function getProductCostPrice(productId,qty){
-  const lots=[];
-  (DB.stockImports||[]).forEach(imp=>{(imp.items||[]).forEach(item=>{if(item.productId===productId)lots.push({cost:item.cost,qty:item.qty,importDate:imp.date});});});
-  if(!lots.length||qty<=0)return null;
-  lots.sort((a,b)=>(a.importDate||'').localeCompare(b.importDate||''));
-  let remaining=qty,totalCost=0;
-  for(const lot of lots){if(remaining<=0)break;const take=Math.min(remaining,lot.qty);totalCost+=take*lot.cost;remaining-=take;}
-  return Math.round(totalCost/qty);
+/* ---- SỔ CÁI FIFO (bán hết lô cũ mới ăn sang lô mới) ----
+   Xếp mọi phiếu nhập và mọi lần bán theo thứ tự thời gian rồi trừ lô lần lượt.
+   Nhờ vậy biết được giá vốn đúng của từng lần bán, và biết lô nào đang mở để
+   gợi ý giá vốn cho lần bán kế tiếp.
+   Lưu ý: phiếu nhập ghi số lượng/giá theo ĐƠN VỊ GỐC (1 bao), còn lần bán có
+   thể theo Kg, nên phải quy đổi về đơn vị gốc trước khi trừ lô. */
+let _fifoCache=null;
+function fifoInvalidate(){_fifoCache=null;}
+
+// excludeDsId: bỏ qua 1 bản ghi sổ bán hàng — dùng khi đang sửa chính bản ghi đó,
+// nếu không phần hàng của nó bị trừ lô hai lần.
+function fifoBuild(excludeDsId){
+  const ck=excludeDsId||'';
+  if(_fifoCache&&_fifoCache.key===ck)return _fifoCache.data;
+  const ev=[];
+  (DB.stockImports||[]).forEach((im,oi)=>(im.items||[]).forEach((it,ix)=>{
+    if(!it.productId)return;
+    ev.push({kind:0,date:im.date||'',oi,ix,productId:it.productId,qty:+it.qty||0,cost:+it.cost||0});
+  }));
+  (DB.invoices||[]).forEach((v,oi)=>{
+    if(v.status==='cancelled')return;
+    (v.items||[]).forEach((it,ix)=>{
+      if(!it.productId)return;
+      const p=DB.products.find(x=>x.id===it.productId);
+      ev.push({kind:1,date:v.date||'',oi,ix,productId:it.productId,
+        qty:toBaseQty(p,it.qty,it.unit),key:'inv|'+v.id+'|'+ix});
+    });
+  });
+  (DB.dailySales||[]).forEach((s,oi)=>{
+    if(excludeDsId&&s.id===excludeDsId)return;
+    (s.items||[]).forEach((it,ix)=>{
+      if(!it.productId)return;
+      const p=DB.products.find(x=>x.id===it.productId);
+      ev.push({kind:1,date:s.date||'',oi,ix,productId:it.productId,
+        qty:toBaseQty(p,it.qty,it.unit),key:'ds|'+s.id+'|'+ix});
+    });
+  });
+  // Cùng ngày thì tính nhập trước, bán sau (hàng nhập về là bán được ngay).
+  // Các mảng đều unshift nên chỉ số càng lớn càng cũ -> đảo lại cho đúng thời gian.
+  ev.sort((a,b)=>String(a.date).localeCompare(String(b.date))||(a.kind-b.kind)||(b.oi-a.oi)||(a.ix-b.ix));
+
+  const lots={},costOut={};
+  ev.forEach(e=>{
+    const arr=lots[e.productId]=lots[e.productId]||[];
+    if(e.kind===0){arr.push({cost:e.cost,remain:e.qty});return;}
+    costOut[e.key]=fifoTake(arr,e.qty,e.productId);
+  });
+  const data={lots,costOut};
+  _fifoCache={key:ck,data};
+  return data;
+}
+
+// Trừ qtyBase khỏi các lô theo thứ tự cũ -> mới, trả giá vốn bình quân của 1 đơn vị gốc.
+// peek=true thì chỉ tính thử, không trừ lô.
+function fifoTake(arr,qtyBase,productId,peek){
+  let remain=+qtyBase||0,total=0,taken=0;
+  for(const lot of arr){
+    if(remain<=1e-9)break;
+    if(lot.remain<=1e-9)continue;
+    const t=Math.min(remain,lot.remain);
+    total+=t*lot.cost;taken+=t;remain-=t;
+    if(!peek)lot.remain-=t;
+  }
+  // Bán nhiều hơn số hàng các lô ghi nhận (phiếu nhập thiếu) -> phần dôi tạm tính
+  // theo giá lô mới nhất, và đánh dấu short để biết con số này chỉ là ước lượng.
+  let short=false;
+  if(remain>1e-9){
+    short=true;
+    const p=DB.products.find(x=>x.id===productId);
+    const fb=(arr.length?arr[arr.length-1].cost:0)||(p?.cost||0);
+    total+=remain*fb;taken+=remain;
+  }
+  return{perBase:taken>1e-9?total/taken:0,short,known:arr.length>0};
+}
+
+// Giá vốn 1 đơn vị gốc cho lần bán sắp tới, tính trên các lô CÒN LẠI.
+// extraBase: phần đã thêm vào giỏ nhưng chưa lưu (cũng phải trừ lô trước).
+function fifoQuoteBase(productId,qtyBase,extraBase,excludeDsId){
+  const src=(fifoBuild(excludeDsId).lots||{})[productId]||[];
+  const p=DB.products.find(x=>x.id===productId);
+  if(!src.length)return p?.cost||0;
+  const arr=src.map(l=>({cost:l.cost,remain:l.remain}));
+  if(+extraBase>0)fifoTake(arr,extraBase,productId);
+  if(!(+qtyBase>0)){
+    // Chưa gõ số lượng -> lấy giá của lô đang mở
+    const open=arr.find(l=>l.remain>1e-9);
+    return open?open.cost:arr[arr.length-1].cost;
+  }
+  return fifoTake(arr,qtyBase,productId,true).perBase;
+}
+
+// Giá vốn bình quân của hàng đang thực có trong kho (chỉ tính lô chưa bán hết).
+// Trả null nếu không còn lô nào để suy ra.
+function fifoAvgCost(productId){
+  const arr=(fifoBuild().lots||{})[productId]||[];
+  let q=0,v=0;
+  arr.forEach(l=>{if(l.remain>1e-9){q+=l.remain;v+=l.remain*l.cost;}});
+  return q>1e-9?Math.round(v/q):null;
+}
+
+// Giá vốn 1 đơn vị bán của 1 dòng hàng đã lưu.
+// Đã chốt giá vốn lúc bán thì giữ nguyên con số đó, không tính lại.
+function fifoItemCost(it,ownerKey){
+  if(+it.costPrice>0)return +it.costPrice;
+  if(!ownerKey)return null;
+  const r=(fifoBuild().costOut||{})[ownerKey];
+  if(!r||!r.known)return null;
+  const p=DB.products.find(x=>x.id===it.productId);
+  return costPerUnit(r.perBase,p,it.unit);
+}
+
+// Giá vốn chỉ là ước lượng khi bán nhiều hơn số hàng các phiếu nhập ghi nhận
+// (thường do phiếu nhập bị thiếu). Dòng đã chốt giá vốn thì luôn là số chắc chắn.
+function fifoIsEstimate(it,ownerKey){
+  if(+it.costPrice>0||!ownerKey)return false;
+  const r=(fifoBuild().costOut||{})[ownerKey];
+  return!!(r&&r.short);
 }
 
 // Lãi/lỗ của 1 dòng hàng. profit=null nghĩa là không xác định được giá vốn
-function itemProfit(it){
-  const cost=it.costPrice>0?it.costPrice:getProductCostPrice(it.productId,it.qty);
+function itemProfit(it,ownerKey){
+  const cost=fifoItemCost(it,ownerKey);
   if(cost===null)return{cost:null,profit:null};
   return{cost,profit:(it.price-cost)*it.qty};
 }
 
-function profitCell(it){
-  const{profit}=itemProfit(it);
+function profitCell(it,ownerKey){
+  const{profit}=itemProfit(it,ownerKey);
   if(profit===null)return`<td class="text-muted" title="Chưa có giá vốn">—</td>`;
   return`<td class="${profit>=0?'text-green':'text-red'} font-bold">${profit>=0?'+':''} ${fmtK(profit)}</td>`;
 }
 
-function sumProfit(items){
-  return(items||[]).reduce((s,it)=>{const{profit}=itemProfit(it);return s+(profit||0);},0);
+// ownerPrefix: 'ds|<id>' của bản ghi sổ bán hàng, để tra đúng dòng trong sổ cái
+function sumProfit(items,ownerPrefix){
+  return(items||[]).reduce((s,it,i)=>{
+    const{profit}=itemProfit(it,ownerPrefix?ownerPrefix+'|'+i:'');
+    return s+(profit||0);
+  },0);
 }
-function calculateFIFOCost(items){
-  const lots=[];
-  (DB.stockImports||[]).forEach(imp=>{
-    (imp.items||[]).forEach(item=>{
-      lots.push({productId:item.productId,cost:item.cost,qty:item.qty,importDate:imp.date});
-    });
-  });
-  lots.sort((a,b)=>(a.importDate||'').localeCompare(b.importDate||''));
-
+// Tính giá vốn + lãi/lỗ cho giỏ hàng sắp lưu. Các dòng trong cùng giỏ trừ lô nối
+// tiếp nhau: dòng đầu ăn hết lô cũ thì dòng sau tự sang lô mới.
+function calculateFIFOCost(items,excludeDsId){
+  const used={};
   return items.map(it=>{
-    if(it.costPrice && it.costPrice > 0){
-      const profit=(it.price-it.costPrice)*it.qty;
-      return{...it,costPrice:it.costPrice,profit:Math.round(profit),profitMargin:it.price>0?((it.price-it.costPrice)/it.price*100).toFixed(1)+'%':'0%'};
-    }
-    // Lô nhập tính theo đơn vị gốc (bao) -> phải quy số lượng bán về đơn vị gốc rồi mới trừ lô
     const p=DB.products.find(x=>x.id===it.productId);
-    let remaining=toBaseQty(p,it.qty,it.unit);
-    let totalCost=0;
-    let costPrice=0;
-
-    for(let lot of lots){
-      if(lot.productId!==it.productId||remaining<=0)continue;
-      const take=Math.min(remaining,lot.qty);
-      totalCost+=take*lot.cost;
-      remaining-=take;
-    }
-
-    costPrice=it.qty>0?totalCost/it.qty:0;
+    const qtyBase=toBaseQty(p,it.qty,it.unit);
+    const costPrice=+it.costPrice>0?+it.costPrice
+      :costPerUnit(fifoQuoteBase(it.productId,qtyBase,used[it.productId]||0,excludeDsId),p,it.unit);
+    used[it.productId]=(used[it.productId]||0)+qtyBase;
     const profit=(it.price-costPrice)*it.qty;
     return{
       ...it,costPrice:Math.round(costPrice),profit:Math.round(profit),
       profitMargin:it.price>0?((it.price-costPrice)/it.price*100).toFixed(1)+'%':'0%'
     };
+  });
+}
+
+// Chốt giá vốn vào từng dòng hàng ngay lúc bán, để sau này không bị tính lại
+function fifoStampCost(items){
+  const used={};
+  return items.map(it=>{
+    const p=DB.products.find(x=>x.id===it.productId);
+    const qtyBase=toBaseQty(p,it.qty,it.unit);
+    const c=+it.costPrice>0?+it.costPrice
+      :costPerUnit(fifoQuoteBase(it.productId,qtyBase,used[it.productId]||0),p,it.unit);
+    used[it.productId]=(used[it.productId]||0)+qtyBase;
+    return{...it,costPrice:Math.round(c)};
   });
 }
 
@@ -2592,10 +2715,14 @@ function renderDailySalesTable(){
       ${i===0?`<td rowspan="${n}"><code>${e.time||e.id}</code></td><td rowspan="${n}"><strong>${e.customerName||'khách vãng lai'}</strong></td>`:''}
       <td>${it.icon||'📦'} ${it.name}</td>
       <td>${it.qty} ${it.unit||''}</td>
-      <td>${itemProfit(it).cost===null?'<span class="text-muted">—</span>':fmtK(itemProfit(it).cost)}</td>
+      <td>${(()=>{const k='ds|'+e.id+'|'+i,gv=itemProfit(it,k).cost;
+        if(gv===null)return'<span class="text-muted">—</span>';
+        return fifoIsEstimate(it,k)
+          ?`<span title="Bán nhiều hơn số hàng các phiếu nhập ghi nhận — giá vốn này chỉ là ước lượng, nên kiểm tra lại phiếu nhập">≈ ${fmtK(gv)}</span>`
+          :fmtK(gv);})()}</td>
       <td>${fmtK(it.price)}</td>
       <td class="font-bold">${fmtK(it.qty*it.price)}</td>
-      ${profitCell(it)}
+      ${profitCell(it,'ds|'+e.id+'|'+i)}
       ${i===0?`<td rowspan="${n}" style="max-width:140px;overflow:hidden;text-overflow:ellipsis">${e.note||'—'}</td>
       <td rowspan="${n}"><div style="display:flex;gap:4px">
         <button class="btn btn-outline btn-sm" onclick="showEditDailySales('${e.id}')">✏️</button>
@@ -2604,7 +2731,7 @@ function renderDailySalesTable(){
     </tr>`).join('');
   }).join('');
   const total=entries.reduce((s,e)=>s+(e.totalAmount||0),0);
-  const profit=entries.reduce((s,e)=>s+sumProfit(e.items),0);
+  const profit=entries.reduce((s,e)=>s+sumProfit(e.items,'ds|'+e.id),0);
   foot.innerHTML=`<tr><td colspan="6" class="text-right font-bold">💰 Ngày ${fmtD(dailySalesDate)}:</td><td class="font-bold text-green">${fmtK(total)}</td><td class="${profit>=0?'font-bold text-green':'font-bold text-red'}">${profit>=0?'+':''} ${fmtK(profit)}</td><td colspan="2"></td></tr>`;
 }
 
@@ -2612,13 +2739,20 @@ function showDailySalesForm(editId){
   if(!Array.isArray(DB.dailySales))DB.dailySales=[];
   const e=editId?DB.dailySales.find(x=>x.id===editId):null;
   if(editId&&!e)return;
+  _dsEditingId=editId||'';
   dailySalesCart=e?JSON.parse(JSON.stringify(e.items)):[];
-  // Bản ghi cũ lưu costPrice=0 -> điền giá vốn gợi ý để sửa/lưu lại cho đúng
+  // Bản ghi cũ lưu costPrice=0 -> điền giá vốn gợi ý để sửa/lưu lại cho đúng.
+  // Tính nối tiếp nhau nên dòng sau tự sang lô mới khi dòng trước ăn hết lô cũ.
+  const _fill={};
   dailySalesCart.forEach(it=>{
+    const p=DB.products.find(x=>x.id===it.productId);
+    const qb=toBaseQty(p,it.qty,it.unit);
     if(!(it.costPrice>0)){
-      it.costPrice=dsDefaultCost(it.productId,it.unit);
+      it.costPrice=costPerUnit(fifoQuoteBase(it.productId,qb,_fill[it.productId]||0,_dsEditingId),p,it.unit);
       it.profit=Math.round((it.price-it.costPrice)*it.qty);
     }
+    // Dòng đã chốt giá vốn vẫn ăn vào lô -> vẫn phải cộng dồn
+    _fill[it.productId]=(_fill[it.productId]||0)+qb;
   });
   showModal(`<div class="modal modal-lg">
     <div class="modal-header"><span>📝</span><h2>${e?'Sửa sổ bán hàng':'Thêm sổ bán hàng'}</h2><button class="btn btn-ghost btn-icon" onclick="closeModal()">✕</button></div>
@@ -2642,8 +2776,8 @@ function showDailySalesForm(editId){
           <div id="ds-ac" class="ac-dropdown"></div>
         </div>
         <div class="form-group" style="margin:0;min-width:100px"><label style="font-size:10px">Đơn vị</label><select class="form-control" id="ds-unit"><option value="">—</option></select></div>
-        <div class="form-group" style="margin:0;width:70px"><label style="font-size:10px">SL</label><input class="form-control" type="text" inputmode="numeric" id="ds-qty" oninput="filterNumInput(this,true)"/></div>
-        <div class="form-group" style="margin:0;min-width:90px"><label style="font-size:10px">Giá vốn</label><input class="form-control" type="text" inputmode="numeric" id="ds-cost" oninput="filterNumInput(this,false)" title="Tự điền theo lô nhập cũ nhất, sửa được"/></div>
+        <div class="form-group" style="margin:0;width:70px"><label style="font-size:10px">SL</label><input class="form-control" type="text" inputmode="numeric" id="ds-qty" oninput="filterNumInput(this,true);dsRefreshCost()"/></div>
+        <div class="form-group" style="margin:0;min-width:90px"><label style="font-size:10px">Giá vốn</label><input class="form-control" type="text" inputmode="numeric" id="ds-cost" oninput="filterNumInput(this,false);this.dataset.manual='1'" title="Tự điền theo lô đang bán tới, sửa được"/></div>
         <div class="form-group" style="margin:0;flex:1;min-width:100px"><label style="font-size:10px">Đơn giá bán</label><input class="form-control" type="text" inputmode="numeric" id="ds-price" oninput="filterNumInput(this,false)"/></div>
         <button class="btn btn-green btn-icon" onclick="addDailySalesItem()">+</button>
       </div>
@@ -2687,29 +2821,44 @@ function dsSearchProd(q){
   el.style.display='block';
 }
 
-// Giá vốn gợi ý: lô nhập cũ nhất, không có thì lấy giá vốn của sản phẩm.
+// Giá vốn gợi ý: lấy theo lô ĐANG MỞ (lô cũ nhất còn hàng), không phải lô cũ nhất
+// đã bán hết từ đời nào. Bán vượt phần còn lại của lô đang mở thì trộn giá sang lô sau.
 // Giá vốn trong phiếu nhập là giá của 1 đơn vị gốc (1 bao) -> bán lẻ Kg phải chia theo ratio.
-function dsDefaultCost(productId,unitName){
-  const lots=[];
-  (DB.stockImports||[]).forEach(imp=>{
-    (imp.items||[]).forEach(item=>{
-      if(item.productId===productId)lots.push({cost:item.cost,importDate:imp.date});
-    });
-  });
-  lots.sort((a,b)=>(a.importDate||'').localeCompare(b.importDate||''));
+function dsDefaultCost(productId,unitName,qty){
   const p=DB.products.find(x=>x.id===productId);
-  const giaGoc=lots.length?lots[0].cost:(p?.cost||0);
-  return costPerUnit(giaGoc,p,unitName);
+  const qtyBase=toBaseQty(p,qty,unitName);
+  const base=fifoQuoteBase(productId,qtyBase,dsCartBaseQty(productId),_dsEditingId);
+  return costPerUnit(base,p,unitName);
+}
+
+// Số hàng của sản phẩm này đã nằm trong giỏ nhưng chưa lưu — cũng đã ăn vào lô rồi
+function dsCartBaseQty(productId){
+  return(dailySalesCart||[]).reduce((s,it)=>{
+    if(it.productId!==productId)return s;
+    const p=DB.products.find(x=>x.id===productId);
+    return s+toBaseQty(p,it.qty,it.unit);
+  },0);
 }
 
 // Điền giá vốn + giá bán gợi ý theo đơn vị đang chọn (Bao hay Kg)
 function dsFillUnitPrices(productId,unitName){
   const p=DB.products.find(x=>x.id===productId);if(!p)return;
-  const costEl=document.getElementById('ds-cost');
-  if(costEl)costEl.value=dsDefaultCost(productId,unitName)||'';
+  dsRefreshCost();
   const priceEl=document.getElementById('ds-price');
   const u=unitOf(p,unitName);
   if(priceEl&&u)priceEl.value=u.price||'';
+}
+
+// Gõ số lượng xong giá vốn phải tính lại: bán 3 bao khác bán 10 bao khi lô đang mở
+// chỉ còn 4 bao. Không đè lên con số sư huynh đã tự gõ.
+function dsRefreshCost(){
+  const costEl=document.getElementById('ds-cost');if(!costEl)return;
+  if(costEl.dataset.manual==='1')return;
+  const pid=document.getElementById('ds-prod-inp')?.dataset.pid;
+  if(!pid){costEl.value='';return;}
+  const unit=document.getElementById('ds-unit')?.value||'';
+  const qty=+(document.getElementById('ds-qty')?.value||0);
+  costEl.value=dsDefaultCost(pid,unit,qty)||'';
 }
 
 // Sửa giá vốn của 1 dòng đã có trong giỏ
@@ -2725,6 +2874,8 @@ function dsPickProd(id){
   const p=DB.products.find(x=>x.id===id);if(!p)return;
   const inp=document.getElementById('ds-prod-inp');
   if(inp){inp.value=p.name;inp.dataset.pid=p.id;}
+  // Sản phẩm khác thì giá vốn phải gợi ý lại từ đầu
+  const costEl0=document.getElementById('ds-cost');if(costEl0)costEl0.dataset.manual='';
   const sel=document.getElementById('ds-unit');
   if(sel){
     sel.innerHTML=p.units.map((u,i)=>`<option value="${u.name}" data-price="${u.price}" ${i===0?'selected':''}>${u.name}</option>`).join('');
@@ -2753,7 +2904,8 @@ function addDailySalesItem(){
   inp.value='';inp.dataset.pid='';
   const q=document.getElementById('ds-qty');if(q)q.value='';
   const pr=document.getElementById('ds-price');if(pr)pr.value='';
-  const costEl=document.getElementById('ds-cost');if(costEl)costEl.value='';
+  // Xóa cả dấu "đã sửa tay" để dòng sau được gợi ý lại theo lô kế tiếp
+  const costEl=document.getElementById('ds-cost');if(costEl){costEl.value='';costEl.dataset.manual='';}
   const sel=document.getElementById('ds-unit');if(sel)sel.innerHTML='<option value="">—</option>';
   renderDailySalesItems();
   inp.focus();
@@ -2794,8 +2946,8 @@ function saveDailySales(editId){
   if(!date){toast('Chọn ngày bán!','error');return;}
   if(!dailySalesCart.length){toast('Thêm ít nhất 1 sản phẩm!','error');return;}
 
-  // Tính FIFO lãi/lỗ
-  const items=calculateFIFOCost(dailySalesCart);
+  // Tính FIFO lãi/lỗ (khi sửa thì loại bản ghi cũ ra để không bị trừ lô 2 lần)
+  const items=calculateFIFOCost(dailySalesCart,editId);
   const totalAmount=items.reduce((s,i)=>s+i.qty*i.price,0);
   const totalProfit=items.reduce((s,i)=>s+(i.profit||0),0);
 
@@ -3350,7 +3502,7 @@ function confirmOrder(id){
   // Create invoice from order
   const customer=DB.customers.find(c=>c.id===o.customerId);
   const inv={id:'HD'+Date.now().toString().slice(-6),date:today(),customerId:o.customerId,customerName:o.customerName,
-    items:o.items.map(i=>({productId:i.productId,name:i.name,qty:i.qty,unit:i.unit,price:i.price})),
+    items:fifoStampCost(o.items.map(i=>({productId:i.productId,name:i.name,qty:i.qty,unit:i.unit,price:i.price}))),
     total:o.total,paid:o.payMode==='cash'?0:o.total,debt:o.payMode==='cash'?o.total:0,
     status:o.payMode==='cash'?'partial':'paid'};
   DB.invoices.unshift(inv);
