@@ -2511,14 +2511,16 @@ let _dsEditingId='';
    gợi ý giá vốn cho lần bán kế tiếp.
    Lưu ý: phiếu nhập ghi số lượng/giá theo ĐƠN VỊ GỐC (1 bao), còn lần bán có
    thể theo Kg, nên phải quy đổi về đơn vị gốc trước khi trừ lô. */
-let _fifoCache=null;
-function fifoInvalidate(){_fifoCache=null;}
+let _fifoCache={};
+function fifoInvalidate(){_fifoCache={};}
 
 // excludeDsId: bỏ qua 1 bản ghi sổ bán hàng — dùng khi đang sửa chính bản ghi đó,
 // nếu không phần hàng của nó bị trừ lô hai lần.
-function fifoBuild(excludeDsId){
-  const ck=excludeDsId||'';
-  if(_fifoCache&&_fifoCache.key===ck)return _fifoCache.data;
+// asOf (yyyy-mm-dd): chỉ tính tới hết ngày đó. Dùng khi nhập bù sổ cũ — bán ngày
+// 15/6 thì không được lấy giá của lô mãi 10/7 mới nhập về.
+function fifoBuild(excludeDsId,asOf){
+  const ck=(excludeDsId||'')+'@'+(asOf||'');
+  if(_fifoCache[ck])return _fifoCache[ck];
   const ev=[];
   (DB.stockImports||[]).forEach((im,oi)=>(im.items||[]).forEach((it,ix)=>{
     if(!it.productId)return;
@@ -2548,12 +2550,16 @@ function fifoBuild(excludeDsId){
 
   const lots={},costOut={};
   ev.forEach(e=>{
+    if(asOf&&String(e.date)>asOf)return;   // việc xảy ra sau mốc -> chưa tính tới
     const arr=lots[e.productId]=lots[e.productId]||[];
     if(e.kind===0){arr.push({cost:e.cost,remain:e.qty});return;}
     costOut[e.key]=fifoTake(arr,e.qty,e.productId);
   });
   const data={lots,costOut};
-  _fifoCache={key:ck,data};
+  // Giữ vài mốc gần đây thôi, tránh phình bộ nhớ khi gõ liên tục trong form
+  const keys=Object.keys(_fifoCache);
+  if(keys.length>8)delete _fifoCache[keys[0]];
+  _fifoCache[ck]=data;
   return data;
 }
 
@@ -2582,8 +2588,8 @@ function fifoTake(arr,qtyBase,productId,peek){
 
 // Giá vốn 1 đơn vị gốc cho lần bán sắp tới, tính trên các lô CÒN LẠI.
 // extraBase: phần đã thêm vào giỏ nhưng chưa lưu (cũng phải trừ lô trước).
-function fifoQuoteBase(productId,qtyBase,extraBase,excludeDsId){
-  const src=(fifoBuild(excludeDsId).lots||{})[productId]||[];
+function fifoQuoteBase(productId,qtyBase,extraBase,excludeDsId,asOf){
+  const src=(fifoBuild(excludeDsId,asOf).lots||{})[productId]||[];
   const p=DB.products.find(x=>x.id===productId);
   if(!src.length)return p?.cost||0;
   const arr=src.map(l=>({cost:l.cost,remain:l.remain}));
@@ -2646,13 +2652,13 @@ function sumProfit(items,ownerPrefix){
 }
 // Tính giá vốn + lãi/lỗ cho giỏ hàng sắp lưu. Các dòng trong cùng giỏ trừ lô nối
 // tiếp nhau: dòng đầu ăn hết lô cũ thì dòng sau tự sang lô mới.
-function calculateFIFOCost(items,excludeDsId){
+function calculateFIFOCost(items,excludeDsId,asOf){
   const used={};
   return items.map(it=>{
     const p=DB.products.find(x=>x.id===it.productId);
     const qtyBase=toBaseQty(p,it.qty,it.unit);
     const costPrice=+it.costPrice>0?+it.costPrice
-      :costPerUnit(fifoQuoteBase(it.productId,qtyBase,used[it.productId]||0,excludeDsId),p,it.unit);
+      :costPerUnit(fifoQuoteBase(it.productId,qtyBase,used[it.productId]||0,excludeDsId,asOf),p,it.unit);
     used[it.productId]=(used[it.productId]||0)+qtyBase;
     const profit=(it.price-costPrice)*it.qty;
     return{
@@ -2660,6 +2666,41 @@ function calculateFIFOCost(items,excludeDsId){
       profitMargin:it.price>0?((it.price-costPrice)/it.price*100).toFixed(1)+'%':'0%'
     };
   });
+}
+
+/* ---- SOÁT LỆCH NGÀY (bán trước ngày hàng về kho) ----
+   Nhập bù sổ tay dễ chọn nhầm sản phẩm tên na ná nhau. Dấu hiệu rõ nhất là ngày
+   bán nằm trước ngày lô đầu tiên của sản phẩm đó về kho — lúc đó cửa hàng chưa
+   hề có món hàng này để mà bán. */
+
+// Ngày về kho của lô sớm nhất, '' nếu sản phẩm chưa từng có phiếu nhập nào
+function firstImportDate(productId){
+  let d='';
+  (DB.stockImports||[]).forEach(im=>(im.items||[]).forEach(it=>{
+    if(it.productId!==productId||!im.date)return;
+    if(!d||im.date<d)d=im.date;
+  }));
+  return d;
+}
+
+// Trả {level,msg} nếu đáng ngờ, null nếu bình thường.
+// level='red': chắc chắn lệch — bán trước cả lô đầu tiên.
+// level='orange': chưa có phiếu nhập nào để đối chiếu.
+function saleDateWarn(productId,date){
+  if(!productId||!date)return null;
+  const p=DB.products.find(x=>x.id===productId);
+  const nm=p?.name||'Sản phẩm này';
+  const first=firstImportDate(productId);
+  if(!first)return{level:'orange',msg:`${nm} chưa có phiếu nhập nào — không đối chiếu được giá vốn`};
+  if(date<first)return{level:'red',msg:`${nm} tới ${fmtD(first)} mới nhập lô đầu tiên, mà ngày bán là ${fmtD(date)} — kho chưa có hàng này, có nhầm sản phẩm không?`};
+  return null;
+}
+
+// Icon ⚠️ gắn cạnh tên sản phẩm trong các bảng
+function saleDateBadge(productId,date){
+  const w=saleDateWarn(productId,date);
+  if(!w)return'';
+  return` <span style="cursor:help;color:${w.level==='red'?'var(--red)':'var(--amber)'}" title="${w.msg.replace(/"/g,'&quot;')}">⚠️</span>`;
 }
 
 // Chốt giá vốn vào từng dòng hàng ngay lúc bán, để sau này không bị tính lại
@@ -2713,7 +2754,7 @@ function renderDailySalesTable(){
     const n=e.items.length||1;
     return e.items.map((it,i)=>`<tr>
       ${i===0?`<td rowspan="${n}"><code>${e.time||e.id}</code></td><td rowspan="${n}"><strong>${e.customerName||'khách vãng lai'}</strong></td>`:''}
-      <td>${it.icon||'📦'} ${it.name}</td>
+      <td>${it.icon||'📦'} ${it.name}${saleDateBadge(it.productId,e.date)}</td>
       <td>${it.qty} ${it.unit||''}</td>
       <td>${(()=>{const k='ds|'+e.id+'|'+i,gv=itemProfit(it,k).cost;
         if(gv===null)return'<span class="text-muted">—</span>';
@@ -2748,7 +2789,7 @@ function showDailySalesForm(editId){
     const p=DB.products.find(x=>x.id===it.productId);
     const qb=toBaseQty(p,it.qty,it.unit);
     if(!(it.costPrice>0)){
-      it.costPrice=costPerUnit(fifoQuoteBase(it.productId,qb,_fill[it.productId]||0,_dsEditingId),p,it.unit);
+      it.costPrice=costPerUnit(fifoQuoteBase(it.productId,qb,_fill[it.productId]||0,_dsEditingId,e?e.date:dailySalesDate),p,it.unit);
       it.profit=Math.round((it.price-it.costPrice)*it.qty);
     }
     // Dòng đã chốt giá vốn vẫn ăn vào lô -> vẫn phải cộng dồn
@@ -2758,7 +2799,7 @@ function showDailySalesForm(editId){
     <div class="modal-header"><span>📝</span><h2>${e?'Sửa sổ bán hàng':'Thêm sổ bán hàng'}</h2><button class="btn btn-ghost btn-icon" onclick="closeModal()">✕</button></div>
     <div class="modal-body">
       <div class="grid-2">
-        <div class="form-group"><label>Ngày bán</label><input class="form-control" type="date" id="ds-date" value="${e?e.date:dailySalesDate}"/></div>
+        <div class="form-group"><label>Ngày bán</label><input class="form-control" type="date" id="ds-date" value="${e?e.date:dailySalesDate}" onchange="dsDateChanged()"/></div>
         <div class="form-group ac-wrap" style="position:relative"><label>Khách hàng</label>
           <input class="form-control" id="ds-cust-inp" placeholder="Khách vãng lai" autocomplete="off"
             oninput="dsSearchCust(this.value)" onfocus="dsSearchCust(this.value)"
@@ -2781,6 +2822,7 @@ function showDailySalesForm(editId){
         <div class="form-group" style="margin:0;flex:1;min-width:100px"><label style="font-size:10px">Đơn giá bán</label><input class="form-control" type="text" inputmode="numeric" id="ds-price" oninput="filterNumInput(this,false)"/></div>
         <button class="btn btn-green btn-icon" onclick="addDailySalesItem()">+</button>
       </div>
+      <div id="ds-warn" style="display:none;margin-top:8px;padding:8px 10px;border-radius:var(--radius-sm);font-size:12px;font-weight:600;line-height:1.45"></div>
       <div id="ds-items" class="mt-8"></div>
     </div>
     <div class="modal-footer">
@@ -2814,6 +2856,7 @@ function dsSearchProd(q){
   q=(q||'').trim();
   const inp=document.getElementById('ds-prod-inp');
   if(inp)inp.dataset.pid='';
+  dsShowWarn();
   if(!q){el.style.display='none';el.innerHTML='';return;}
   const matches=DB.products.filter(p=>matchesSearch(p.name,q)).slice(0,6);
   if(!matches.length){el.innerHTML='<div class="ac-empty">Không tìm thấy</div>';el.style.display='block';return;}
@@ -2827,8 +2870,36 @@ function dsSearchProd(q){
 function dsDefaultCost(productId,unitName,qty){
   const p=DB.products.find(x=>x.id===productId);
   const qtyBase=toBaseQty(p,qty,unitName);
-  const base=fifoQuoteBase(productId,qtyBase,dsCartBaseQty(productId),_dsEditingId);
+  // Nhập bù sổ cũ thì chỉ được lấy các lô đã về kho tính tới ngày bán đó
+  const base=fifoQuoteBase(productId,qtyBase,dsCartBaseQty(productId),_dsEditingId,dsSaleDate());
   return costPerUnit(base,p,unitName);
+}
+
+// Ngày bán đang chọn trong form (form chưa mở thì lấy ngày đang xem)
+function dsSaleDate(){
+  return document.getElementById('ds-date')?.value||dailySalesDate;
+}
+
+// Hiện/ẩn ô cảnh báo lệch ngày cho sản phẩm đang gõ dở ở dòng nhập
+function dsShowWarn(){
+  const box=document.getElementById('ds-warn');if(!box)return;
+  const pid=document.getElementById('ds-prod-inp')?.dataset.pid||'';
+  const w=pid?saleDateWarn(pid,dsSaleDate()):null;
+  if(!w){box.style.display='none';box.innerHTML='';return;}
+  const red=w.level==='red';
+  box.style.background=red?'var(--red-lt)':'var(--amber-lt)';
+  box.style.color=red?'var(--red)':'var(--amber)';
+  box.style.border='1px solid '+(red?'var(--red)':'var(--amber)');
+  box.innerHTML=`⚠️ ${w.msg}`;
+  box.style.display='block';
+}
+
+// Đổi ngày bán -> giá vốn gợi ý và cảnh báo phải tính lại theo mốc mới.
+// Các dòng đã nằm trong giỏ giữ nguyên giá vốn (có thể đã sửa tay), chỉ đánh dấu lại.
+function dsDateChanged(){
+  dsRefreshCost();
+  dsShowWarn();
+  renderDailySalesItems();
 }
 
 // Số hàng của sản phẩm này đã nằm trong giỏ nhưng chưa lưu — cũng đã ăn vào lô rồi
@@ -2883,6 +2954,7 @@ function dsPickProd(id){
     sel.onchange=function(){dsFillUnitPrices(id,this.value);};
   }
   dsFillUnitPrices(id,sel?.value||'');
+  dsShowWarn();
   const ac=document.getElementById('ds-ac');if(ac){ac.style.display='none';ac.innerHTML='';}
   const qty=document.getElementById('ds-qty');if(qty)qty.focus();
 }
@@ -2907,6 +2979,7 @@ function addDailySalesItem(){
   // Xóa cả dấu "đã sửa tay" để dòng sau được gợi ý lại theo lô kế tiếp
   const costEl=document.getElementById('ds-cost');if(costEl){costEl.value='';costEl.dataset.manual='';}
   const sel=document.getElementById('ds-unit');if(sel)sel.innerHTML='<option value="">—</option>';
+  dsShowWarn();
   renderDailySalesItems();
   inp.focus();
 }
@@ -2919,7 +2992,7 @@ function renderDailySalesItems(){
     c.innerHTML=`<div class="tbl-wrap"><table>
       <thead><tr><th>Sản phẩm</th><th>ĐVT</th><th>SL</th><th>Giá vốn</th><th>Đơn giá</th><th>Thành tiền</th><th>Lãi/Lỗ</th><th></th></tr></thead>
       <tbody>${dailySalesCart.map((it,i)=>`<tr>
-        <td>${it.icon||'📦'} ${it.name}</td><td>${it.unit||'—'}</td><td>${it.qty}</td>
+        <td>${it.icon||'📦'} ${it.name}${saleDateBadge(it.productId,dsSaleDate())}</td><td>${it.unit||'—'}</td><td>${it.qty}</td>
         <td><input class="form-control" type="text" inputmode="numeric" value="${it.costPrice||''}" placeholder="0"
           oninput="filterNumInput(this,false)" onchange="setCartCost(${i},this.value)"
           style="padding:4px 6px;width:90px;font-size:12px" title="Sửa giá vốn nếu cần"/></td>
@@ -2946,13 +3019,21 @@ function saveDailySales(editId){
   if(!date){toast('Chọn ngày bán!','error');return;}
   if(!dailySalesCart.length){toast('Thêm ít nhất 1 sản phẩm!','error');return;}
 
-  // Tính FIFO lãi/lỗ (khi sửa thì loại bản ghi cũ ra để không bị trừ lô 2 lần)
-  const items=calculateFIFOCost(dailySalesCart,editId);
+  // Tính FIFO lãi/lỗ (khi sửa thì loại bản ghi cũ ra để không bị trừ lô 2 lần).
+  // Chốt theo ngày bán, không phải theo kho hôm nay — nhập bù sổ cũ mới đúng giá vốn.
+  const items=calculateFIFOCost(dailySalesCart,editId,date);
   const totalAmount=items.reduce((s,i)=>s+i.qty*i.price,0);
   const totalProfit=items.reduce((s,i)=>s+(i.profit||0),0);
 
   // Kiểm tra tồn kho đủ không (cảnh báo)
   const warnings=[];
+  // Bán trước ngày hàng về kho -> nhiều khả năng chọn nhầm sản phẩm hoặc nhầm ngày
+  const seenWarn={};
+  items.forEach(it=>{
+    if(seenWarn[it.productId])return;
+    const w=saleDateWarn(it.productId,date);
+    if(w&&w.level==='red'){seenWarn[it.productId]=1;warnings.push('⚠️ '+w.msg);}
+  });
   const canTruTheoSP={};
   items.forEach(it=>{
     const p=DB.products.find(x=>x.id===it.productId);
@@ -2971,7 +3052,7 @@ function saveDailySales(editId){
       warnings.push(`⚠️ ${p.name}: tồn ${fmtStock(p)}, bán ${fmtQty(canTruTheoSP[pid])} ${shortUnitName((baseUnitOf(p)||{}).name||'')}`);
     }
   });
-  if(warnings.length&&!confirm('Cảnh báo tồn kho không đủ:\n'+warnings.join('\n')+'\n\nVẫn lưu không?')){
+  if(warnings.length&&!confirm('Cảnh báo — nên kiểm tra lại:\n\n'+warnings.join('\n\n')+'\n\nVẫn lưu không?')){
     return;
   }
 
