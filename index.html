@@ -3295,6 +3295,7 @@ function renderAdminRecon(c){
   if(!Array.isArray(DB.inventoryChecks))DB.inventoryChecks=[];
   c.innerHTML=`
   <div class="admin-page-header"><span>🔍</span><h1>Đối chiếu tồn kho</h1>
+    <button class="btn btn-outline btn-sm" onclick="showBuyerLookup('')">👥 Ai đã mua</button>
     <button class="btn btn-green btn-sm" onclick="reconApplyAll()">💾 Cập nhật các dòng đã đếm</button>
   </div>
   <div class="page-body-scroll">
@@ -3312,6 +3313,7 @@ function renderAdminRecon(c){
         Chỉ hiện SP có chênh lệch
       </label>
     </div></div>
+    <div id="recon-flags"></div>
     <div class="card">
       <div class="card-header">📋 Bảng đối chiếu</div>
       <div class="tbl-wrap"><table>
@@ -3325,6 +3327,7 @@ function renderAdminRecon(c){
       <div class="tbl-wrap" id="recon-hist"></div>
     </div>
   </div>`;
+  renderReconFlags();
   renderReconTable();
   renderReconHist();
 }
@@ -3355,7 +3358,10 @@ function renderReconTable(){
         <span class="text-xs text-muted">${sub.name}</span>`:''}
       </div></td>
       <td id="recon-diff-${p.id}">${reconDiffCellHTML(p)}</td>
-      <td><button class="btn btn-green btn-sm" onclick="reconApply('${p.id}')">Cập nhật</button></td>
+      <td><div style="display:flex;gap:4px">
+        <button class="btn btn-outline btn-sm" title="Xem toàn bộ chứng từ nhập/bán của SP này" onclick="showProductTrace('${p.id}')">🔎</button>
+        <button class="btn btn-green btn-sm" onclick="reconApply('${p.id}')">Cập nhật</button>
+      </div></td>
     </tr>`);
   });
   body.innerHTML=rows.length?rows.join(''):'<tr><td colspan="8" class="text-center text-muted" style="padding:16px">Không có sản phẩm nào</td></tr>';
@@ -3398,7 +3404,7 @@ function reconApply(pid){
   delete reconInputs[pid];
   saveDB();
   toast(`Đã cập nhật tồn "${p.name}" → ${fmtStock(p)}`);
-  renderReconTable();renderReconHist();
+  renderReconFlags();renderReconTable();renderReconHist();
 }
 
 function reconApplyAll(){
@@ -3419,7 +3425,7 @@ function reconApplyAll(){
   });
   saveDB();
   toast(`Đã cập nhật tồn kho ${canApply.length} sản phẩm`);
-  renderReconTable();renderReconHist();
+  renderReconFlags();renderReconTable();renderReconHist();
 }
 
 function renderReconHist(){
@@ -3436,6 +3442,397 @@ function renderReconHist(){
       <td class="font-bold">${fmtQty(h.actualQty)} ${shortUnitName(h.unit||'')}</td>
       <td class="${(h.diff||0)>0?'text-green':((h.diff||0)<0?'text-red':'text-muted')}">${(h.diff||0)>0?'+':''}${fmtQty(h.diff)}</td>
     </tr>`).join('')}</tbody></table>`;
+}
+
+/* ---- TRUY VẾT CHỨNG TỪ CỦA 1 SẢN PHẨM ----
+   Trả lời câu "vì sao tồn kho lệch": xếp mọi phiếu nhập, hóa đơn và sổ bán hàng
+   của một sản phẩm theo thứ tự thời gian rồi chạy số dư kho sau từng chứng từ.
+   Chỗ số dư tụt xuống âm chính là chỗ phiếu nhập bị thiếu hoặc ghi sai.
+   Toàn bộ phần này CHỈ ĐỌC dữ liệu, không sửa/xóa gì. */
+
+// Phiếu nhập không lưu đơn vị -> mọi số lượng nhập được hiểu theo đơn vị gốc
+function traceRows(p){
+  const rows=[];
+  (DB.stockImports||[]).forEach(im=>(im.items||[]).forEach(it=>{
+    if(it.productId!==p.id)return;
+    rows.push({date:im.date||'',kind:'nhap',doc:im.id||'',who:im.supplier||'—',
+      qty:+it.qty||0,unit:it.unit||'',base:toBaseQty(p,it.qty,it.unit),
+      money:(+it.qty||0)*(+it.cost||0)});
+  }));
+  (DB.invoices||[]).forEach(v=>{
+    if(v.status==='cancelled')return;
+    (v.items||[]).forEach(it=>{
+      if(it.productId!==p.id)return;
+      rows.push({date:v.date||'',kind:'hd',doc:v.id||'',who:v.customerName||'Khách lẻ',
+        qty:+it.qty||0,unit:it.unit||'',base:-toBaseQty(p,it.qty,it.unit),
+        money:(+it.qty||0)*(+it.price||0)});
+    });
+  });
+  (DB.dailySales||[]).forEach(s=>(s.items||[]).forEach(it=>{
+    if(it.productId!==p.id)return;
+    rows.push({date:s.date||'',kind:'so',doc:s.id||'',who:s.customerName||'khách vãng lai',
+      qty:+it.qty||0,unit:it.unit||'',base:-toBaseQty(p,it.qty,it.unit),
+      money:(+it.qty||0)*(+it.price||0)});
+  }));
+  // Lần chốt tồn chỉ để giải thích vì sao con số tồn app nhảy, không tính vào số dư chứng từ
+  (DB.inventoryChecks||[]).forEach(h=>{
+    if(h.productId!==p.id)return;
+    rows.push({date:h.date||'',kind:'chot',doc:h.id||'',who:'đối chiếu kho',
+      qty:h.actualQty,unit:'',base:0,money:0,chotTu:h.appQty,chotToi:h.actualQty});
+  });
+  const thuTu={nhap:0,hd:1,so:1,chot:2};
+  rows.sort((a,b)=>a.date<b.date?-1:a.date>b.date?1:thuTu[a.kind]-thuTu[b.kind]);
+  let bal=0;
+  rows.forEach(r=>{bal=round3(bal+r.base);r.bal=bal;});
+  return rows;
+}
+
+// "0,35" -> "7 Chai", "1,5" -> "1 Thùng 10 Chai" — số lẻ của bao/thùng đọc rất khó
+function traceQty(p,q){
+  const v=+q||0;
+  return (v<0?'−':'')+fmtStock({units:p.units,stock:Math.abs(v)});
+}
+
+const TRACE_KIND={
+  nhap:{txt:'Nhập kho',cls:'badge-green'},
+  hd:{txt:'Hóa đơn POS',cls:'badge-red'},
+  so:{txt:'Sổ bán hàng',cls:'badge-red'},
+  chot:{txt:'Chốt tồn',cls:'badge-gray'}
+};
+
+// Tên rút gọn để dò 2 mã sản phẩm thực ra là cùng một mặt hàng
+function traceNameKey(name){
+  return stripDiacritics(name).replace(/\d+([.,]\d+)?\s*(ml|l|lit|kg|g|gr|cc)\b/g,'')
+    .replace(/[^a-z0-9]+/g,' ').trim();
+}
+function traceSimilarProducts(p){
+  const k=traceNameKey(p.name);
+  if(k.length<4)return[];
+  return DB.products.filter(x=>{
+    if(x.id===p.id)return false;
+    const k2=traceNameKey(x.name);
+    return k2.length>=4&&(k2.includes(k)||k.includes(k2));
+  });
+}
+
+// Các nguyên nhân lệch có thể suy ra được từ chính chứng từ
+function traceDiagnose(p,rows,st){
+  const out=[],baseName=shortUnitName((baseUnitOf(p)||{}).name||'')||'đơn vị';
+  const sub=reconSubUnit(p);
+  const coNhap=rows.some(r=>r.kind==='nhap'), coBan=rows.some(r=>r.kind==='hd'||r.kind==='so');
+  const lech=round3((p.stock||0)-st.lyThuyet);
+
+  if(!coNhap)out.push({lv:coBan?'red':'amber',t:'Chưa có phiếu nhập nào cho mặt hàng này',
+    d:`Số tồn gõ tay lúc tạo sản phẩm không sinh ra phiếu nhập, nên bảng đối chiếu luôn coi mặt hàng này "nhập 0". ${coBan?`App ghi nhận đã bán ${traceQty(p,st.ban)} mà không có hàng vào.`:''} Muốn số liệu khớp, ghi 1 phiếu nhập "tồn đầu kỳ" cho phần hàng đã có sẵn trước khi dùng app.`});
+
+  if(st.lyThuyet<-0.005&&coNhap)out.push({lv:'red',t:`Bán nhiều hơn nhập ${traceQty(p,-st.lyThuyet)}`,
+    d:`Tổng nhập ${traceQty(p,st.nhap)} — tổng bán ${traceQty(p,st.ban)}. Phần thiếu này nằm ở đầu vào: phiếu nhập bị bỏ sót, phiếu ghi thiếu số lượng, hoặc phần hàng tồn từ trước chưa được ghi phiếu.`});
+
+  const amDau=rows.find(r=>r.bal<-0.005);
+  if(amDau&&st.lyThuyet>=-0.005)out.push({lv:'amber',t:`Ngày ${fmtD(amDau.date)} kho đã âm rồi mới có hàng về`,
+    d:`Tới chứng từ ${amDau.doc} thì sổ còn ${traceQty(p,amDau.bal)}. Thường là phiếu nhập bị ghi sai ngày (ghi sau ngày bán) — số tổng vẫn đúng nhưng giá vốn theo lô sẽ tính lệch.`});
+
+  if(Math.abs(lech)>0.005)out.push({lv:'amber',t:`Tồn app lệch ${lech>0?'nhiều hơn':'ít hơn'} chứng từ ${traceQty(p,Math.abs(lech))}`,
+    d:`Chứng từ ra ${traceQty(p,st.lyThuyet)} nhưng app đang giữ ${fmtStock(p)}. Do con số tồn bị trừ sai lúc trước: app không cho tồn xuống âm nên đã giữ ở 0${rows.some(r=>r.kind==='chot')?', hoặc do lần chốt tồn trong bảng dưới':''}, hoặc đã sửa tay ở trang Sản phẩm.`});
+
+  if(sub&&coNhap)out.push({lv:'amber',t:`Kiểm tra đơn vị lúc nhập: phiếu nhập luôn tính theo "${baseName}"`,
+    d:`Mặt hàng này 1 ${baseName} = ${sub.ratio} ${sub.name}. Phiếu nhập không có ô đơn vị nên số nào gõ vào cũng được hiểu là ${baseName}. Nếu lúc nhập gõ số ${sub.name} (gõ 20 định nói 20 ${sub.name}) thì app hiểu thành 20 ${baseName} = ${fmtQty(20*sub.ratio)} ${sub.name} — lệch ${sub.ratio} lần. Ngược lại nhập 1 thùng mà gõ theo ${sub.name} thì app lại hiểu thiếu.`});
+
+  const dups=traceSimilarProducts(p);
+  if(dups.length)out.push({lv:'amber',t:'Có mã sản phẩm khác tên gần giống',
+    d:`${dups.map(x=>`${x.name} (tồn ${fmtStock(x)})`).join(' · ')}. Nếu đây là cùng một mặt hàng bị tạo thành 2 mã thì hàng nhập vào mã này lại bán ra ở mã kia, tồn cả hai đều lệch.`});
+
+  if(!out.length)out.push({lv:'green',t:'Chứng từ khớp, không thấy dấu hiệu bất thường',
+    d:`Nhập ${traceQty(p,st.nhap)} − bán ${traceQty(p,st.ban)} = ${traceQty(p,st.lyThuyet)}, đúng bằng tồn app. Nếu đếm thực tế vẫn lệch thì phần lệch nằm ngoài sổ sách (hàng bán chưa ghi, hàng cho/đổi, hao hụt).`});
+  return out;
+}
+
+function showProductTrace(pid){
+  const p=DB.products.find(x=>x.id===pid);
+  if(!p){toast('Không tìm thấy sản phẩm!','error');return;}
+  const rows=traceRows(p),st=reconStats(p);
+  const baseName=shortUnitName((baseUnitOf(p)||{}).name||'');
+  const diag=traceDiagnose(p,rows,st);
+  const mau={red:{bg:'var(--red-lt)',fg:'var(--red)',ico:'❌'},
+             amber:{bg:'var(--amber-lt)',fg:'var(--amber)',ico:'⚠️'},
+             green:{bg:'var(--g50)',fg:'var(--g800)',ico:'✅'}};
+  const diagHTML=diag.map(x=>{
+    const m=mau[x.lv]||mau.amber;
+    return `<div style="background:${m.bg};color:${m.fg};border:1px solid ${m.fg};border-radius:var(--radius-sm);padding:10px 12px;margin-bottom:8px;font-size:12.5px;line-height:1.5">
+      <strong>${m.ico} ${x.t}</strong><div style="margin-top:3px;opacity:.92">${x.d}</div></div>`;
+  }).join('');
+  const bodyRows=rows.map(r=>{
+    const k=TRACE_KIND[r.kind]||TRACE_KIND.chot;
+    if(r.kind==='chot')return `<tr style="opacity:.75">
+      <td>${fmtD(r.date)}</td><td><code>${r.doc}</code></td><td><span class="badge ${k.cls}">${k.txt}</span></td>
+      <td colspan="2" class="text-xs">ghi đè tồn ${fmtQty(r.chotTu)} → <strong>${fmtQty(r.chotToi)}</strong> ${baseName}</td>
+      <td class="text-muted">${fmtQty(r.bal)}</td><td class="text-xs text-muted">${r.who}</td></tr>`;
+    const am=r.bal<-0.005;
+    return `<tr${am?' style="background:var(--red-lt)"':''}>
+      <td>${fmtD(r.date)}</td><td><code>${r.doc}</code></td>
+      <td><span class="badge ${k.cls}">${k.txt}</span></td>
+      <td class="${r.base>0?'text-green':'text-red'} font-bold">${r.base>0?'+':'−'}${fmtQty(Math.abs(r.qty))} ${shortUnitName(r.unit||baseName)}</td>
+      <td class="text-xs text-muted">${r.base>0?'+':'−'}${traceQty(p,Math.abs(r.base))}</td>
+      <td class="${am?'text-red font-bold':''}">${traceQty(p,r.bal)}${am?' ⚠️':''}</td>
+      <td class="text-xs">${r.who}</td></tr>`;
+  }).join('');
+  showModal(`<div class="modal modal-lg" style="max-width:940px">
+    <div class="modal-header"><span>🔎</span><h2>Truy vết: ${p.name}</h2>
+      <button class="btn btn-outline btn-sm" onclick="closeModal();showBuyerLookup('${p.name.replace(/'/g,"\\'")}')">👥 Ai đã mua</button>
+      <button class="btn btn-outline btn-sm" onclick="closeModal()">✕</button></div>
+    <div class="modal-body">
+      <div class="grid-2" style="gap:10px;margin-bottom:14px">
+        <div class="card"><div class="card-body" style="padding:10px 12px">
+          <div class="text-xs text-muted">Tổng nhập theo phiếu</div>
+          <div class="font-bold text-green" style="font-size:16px">${traceQty(p,st.nhap)}</div></div></div>
+        <div class="card"><div class="card-body" style="padding:10px 12px">
+          <div class="text-xs text-muted">Tổng bán (hóa đơn + sổ)</div>
+          <div class="font-bold text-red" style="font-size:16px">${traceQty(p,st.ban)}</div></div></div>
+        <div class="card"><div class="card-body" style="padding:10px 12px">
+          <div class="text-xs text-muted">Tồn theo chứng từ</div>
+          <div class="font-bold ${st.lyThuyet<-0.005?'text-red':''}" style="font-size:16px">${traceQty(p,st.lyThuyet)}</div></div></div>
+        <div class="card"><div class="card-body" style="padding:10px 12px">
+          <div class="text-xs text-muted">Tồn app đang giữ</div>
+          <div class="font-bold" style="font-size:16px">${fmtStock(p)}</div></div></div>
+      </div>
+      ${diagHTML}
+      ${round3((p.stock||0)-st.lyThuyet)>0.005?`<div style="margin-bottom:12px">
+        <button class="btn btn-green btn-sm" onclick="closeModal();showOpeningStockForm('${p.id}')">📥 Ghi phiếu tồn đầu kỳ để bù chứng từ</button>
+        <span class="text-xs text-muted" style="margin-left:8px">không cộng thêm vào tồn kho</span>
+      </div>`:''}
+      <div class="card mt-8"><div class="card-header">🧾 Dòng thời gian chứng từ (${rows.length})</div>
+        <div class="tbl-wrap"><table>
+          <thead><tr><th>Ngày</th><th>Chứng từ</th><th>Loại</th><th>Số lượng</th><th>Quy về ${baseName||'gốc'}</th><th>Kho sau đó</th><th>NCC / Khách</th></tr></thead>
+          <tbody>${bodyRows||'<tr><td colspan="7" class="text-center text-muted" style="padding:16px">Chưa có chứng từ nào cho sản phẩm này</td></tr>'}</tbody>
+        </table></div></div>
+      <div class="text-xs text-muted mt-8">Bảng này chỉ đọc dữ liệu, không sửa gì. Cột "Kho sau đó" là số hàng còn lại theo sổ sách sau mỗi chứng từ — dòng tô đỏ là lúc sổ đã âm.</div>
+    </div>
+  </div>`);
+}
+
+/* ---- KHẮC PHỤC: PHIẾU NHẬP "TỒN ĐẦU KỲ" ----
+   Hàng đã có trong kho trước khi dùng app không có phiếu nhập nào, nên bảng đối
+   chiếu luôn báo thiếu. Phiếu này bù đúng phần đó. KHÔNG cộng thêm vào tồn kho
+   (số tồn app đã tính phần hàng này rồi) và ghi luôn là đã trả tiền để không
+   phát sinh nợ NCC ảo. */
+function traceFirstDate(p){
+  const ds=traceRows(p).map(r=>r.date).filter(Boolean).sort();
+  if(!ds.length)return today();
+  const d=new Date(ds[0]);d.setDate(d.getDate()-1);
+  return d.toISOString().slice(0,10);
+}
+
+function showOpeningStockForm(pid){
+  const p=DB.products.find(x=>x.id===pid);if(!p)return;
+  const st=reconStats(p),thieu=round3((p.stock||0)-st.lyThuyet);
+  const baseName=shortUnitName((baseUnitOf(p)||{}).name||'')||'đơn vị';
+  const sub=reconSubUnit(p);
+  const goiY=thieu>0?thieu:0;
+  showModal(`<div class="modal">
+    <div class="modal-header"><span>📥</span><h2>Phiếu nhập tồn đầu kỳ</h2>
+      <button class="btn btn-ghost btn-icon" onclick="closeModal()">✕</button></div>
+    <div class="modal-body">
+      <div class="alert alert-warn" style="font-size:12.5px;line-height:1.5">
+        <strong>${p.name}</strong><br>
+        Tồn app đang giữ: <strong>${fmtStock(p)}</strong> · Tồn theo chứng từ: <strong>${traceQty(p,st.lyThuyet)}</strong><br>
+        Phiếu này chỉ bù chứng từ cho phần hàng đã có sẵn — <strong>không cộng thêm vào tồn kho</strong>.
+      </div>
+      <div class="grid-2">
+        <div class="form-group"><label>Số lượng (${baseName})</label>
+          <input class="form-control" type="text" inputmode="decimal" id="os-bao" value="${goiY?Math.floor(goiY+1e-6)||'':''}"
+            oninput="filterNumInput(this,true)"/></div>
+        ${sub?`<div class="form-group"><label>Lẻ (${sub.name})</label>
+          <input class="form-control" type="text" inputmode="decimal" id="os-le"
+            value="${goiY?(Math.round((goiY-Math.floor(goiY+1e-6))*sub.ratio*100)/100)||'':''}" oninput="filterNumInput(this,true)"/></div>`:''}
+        <div class="form-group"><label>Giá vốn 1 ${baseName}</label>
+          <input class="form-control" type="text" inputmode="numeric" id="os-cost" value="${p.cost||''}"
+            oninput="filterNumInput(this,false)"/></div>
+        <div class="form-group"><label>Ngày ghi nhận</label>
+          <input class="form-control" type="date" id="os-date" value="${traceFirstDate(p)}"/></div>
+      </div>
+      <div class="text-xs text-muted">Ngày mặc định lùi trước lần bán sớm nhất, để không bị cảnh báo "bán trước ngày nhập".</div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-outline" onclick="closeModal()">Hủy</button>
+      <button class="btn btn-green" onclick="saveOpeningStock('${p.id}')">💾 Lưu phiếu</button>
+    </div>
+  </div>`);
+}
+
+function saveOpeningStock(pid){
+  const p=DB.products.find(x=>x.id===pid);if(!p)return;
+  const sub=reconSubUnit(p);
+  const bao=parseFloat(document.getElementById('os-bao')?.value)||0;
+  const le=parseFloat(document.getElementById('os-le')?.value)||0;
+  const qty=round3(bao+(sub?le/sub.ratio:0));
+  const cost=Math.round(parseFloat(document.getElementById('os-cost')?.value)||0);
+  const date=document.getElementById('os-date')?.value||today();
+  if(qty<=0){toast('Nhập số lượng tồn đầu kỳ!','error');return;}
+  const total=Math.round(qty*cost);
+  if(!confirm(`Ghi phiếu tồn đầu kỳ cho "${p.name}"\n\nSố lượng: ${traceQty(p,qty)}\nGiá vốn: ${fmt(cost)}/${shortUnitName((baseUnitOf(p)||{}).name||'')}\nThành tiền: ${fmt(total)}\nNgày: ${fmtD(date)}\n\nTồn kho GIỮ NGUYÊN ${fmtStock(p)}, phiếu này chỉ bù chứng từ. Đồng ý?`))return;
+  const imp={id:'NK'+Date.now().toString().slice(-6),date,supplier:'Tồn đầu kỳ',
+    note:'Hàng có sẵn trước khi dùng app — không cộng vào tồn kho',
+    items:[{productId:p.id,name:p.name,qty,cost}],total,paid:total,debt:0,openingStock:true};
+  DB.stockImports.unshift(imp);
+  addPriceHistory('cost',[{productId:p.id,name:p.name,price:cost,qty}],date,imp.id,'stockImport');
+  fifoInvalidate();
+  const avg=fifoAvgCost(p.id);
+  if(avg!==null)p.cost=avg;
+  saveDB();
+  closeModal();
+  toast(`Đã ghi tồn đầu kỳ cho "${p.name}"`);
+  if(document.getElementById('recon-body')){renderReconFlags();renderReconTable();}
+}
+
+// Danh sách mặt hàng có dấu hiệu sai chứng từ, hiện ngay đầu trang đối chiếu
+function reconFlagList(){
+  const out=[];
+  DB.products.forEach(p=>{
+    const st=reconStats(p),lech=round3((p.stock||0)-st.lyThuyet),ly=[];
+    const chuaNhap=!(DB.stockImports||[]).some(im=>(im.items||[]).some(it=>it.productId===p.id));
+    if(chuaNhap)ly.push('chưa có phiếu nhập đầu vào');
+    else if(st.lyThuyet<-0.005)ly.push(`bán quá nhập ${traceQty(p,-st.lyThuyet)}`);
+    if(Math.abs(lech)>0.005)ly.push(`tồn app lệch ${lech>0?'thừa':'thiếu'} ${traceQty(p,Math.abs(lech))}`);
+    if(ly.length)out.push({p,ly,nang:st.lyThuyet<-0.005&&!chuaNhap});
+  });
+  return out.sort((a,b)=>(b.nang?1:0)-(a.nang?1:0));
+}
+function renderReconFlags(){
+  const el=document.getElementById('recon-flags');if(!el)return;
+  const list=reconFlagList();
+  if(!list.length){el.innerHTML='';return;}
+  el.innerHTML=`<div class="card mb-16"><div class="card-header">🚩 Nghi vấn chứng từ (${list.length} mặt hàng)</div>
+    <div class="card-body" style="display:flex;flex-direction:column;gap:6px">
+      ${list.slice(0,15).map(f=>`<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;font-size:12.5px">
+        <span class="badge ${f.nang?'badge-red':'badge-amber'}">${f.nang?'❌':'⚠️'}</span>
+        <strong>${f.p.name}</strong>
+        <span class="text-muted">${f.ly.join(' · ')}</span>
+        <button class="btn btn-outline btn-sm" onclick="showProductTrace('${f.p.id}')">🔎 Truy vết</button>
+      </div>`).join('')}
+      ${list.length>15?`<div class="text-xs text-muted">… và ${list.length-15} mặt hàng nữa, xem trong bảng bên dưới.</div>`:''}
+    </div></div>`;
+}
+
+/* ---- AI ĐÃ MUA MẶT HÀNG NÀY ----
+   Gõ vài tên hàng cách nhau dấu phẩy (vd: cantanil, p40, sa kim cuong) rồi xem
+   ai đã mua, ngày nào, chứng từ nào. Dùng để dò xem số hàng bán ra có đúng
+   người đúng lượng không. CHỈ ĐỌC, không sửa dữ liệu. */
+let buyerQuery='';
+
+function buyerMatchProducts(q){
+  const keys=String(q||'').split(',').map(s=>s.trim()).filter(Boolean);
+  if(!keys.length)return[];
+  return DB.products.filter(p=>keys.some(k=>matchesSearch(p.name,k)));
+}
+
+function buyerRows(prods){
+  const ids={};prods.forEach(p=>ids[p.id]=p);
+  const rows=[];
+  const day=(p,it,q,unit)=>({qty:+q||0,unit:unit||shortUnitName((baseUnitOf(p)||{}).name||''),
+    base:toBaseQty(p,q,unit)});
+  (DB.invoices||[]).forEach(v=>{
+    if(v.status==='cancelled')return;
+    (v.items||[]).forEach(it=>{
+      const p=ids[it.productId];if(!p)return;
+      rows.push(Object.assign({date:v.date||'',doc:v.id||'',kind:'Hóa đơn POS',
+        who:v.customerName||'Khách lẻ',pid:p.id,pname:p.name,price:+it.price||0,
+        money:(+it.qty||0)*(+it.price||0)},day(p,it,it.qty,it.unit)));
+    });
+  });
+  (DB.dailySales||[]).forEach(s=>(s.items||[]).forEach(it=>{
+    const p=ids[it.productId];if(!p)return;
+    rows.push(Object.assign({date:s.date||'',doc:s.id||'',kind:'Sổ bán hàng',
+      who:s.customerName||'khách vãng lai',pid:p.id,pname:p.name,price:+it.price||0,
+      money:(+it.qty||0)*(+it.price||0)},day(p,it,it.qty,it.unit)));
+  }));
+  // Đơn online chưa xác nhận: chưa trừ kho, ghi riêng để khỏi nhầm là đã giao
+  (DB.custOrders||[]).forEach(o=>{
+    if(o.status!=='pending')return;
+    (o.items||[]).forEach(it=>{
+      const p=ids[it.productId];if(!p)return;
+      rows.push(Object.assign({date:o.date||'',doc:o.id||'',kind:'Đơn chờ xử lý',
+        who:o.customerName||'—',pid:p.id,pname:p.name,price:+it.price||0,
+        money:(+it.qty||0)*(+it.price||0),cho:true},day(p,it,it.qty,it.unit)));
+    });
+  });
+  rows.sort((a,b)=>a.date<b.date?1:a.date>b.date?-1:0);
+  return rows;
+}
+
+// Gộp theo khách: mỗi khách mua tổng bao nhiêu của từng mặt hàng
+function buyerGroups(rows,prods){
+  const map={};
+  rows.forEach(r=>{
+    if(r.cho)return;
+    const k=r.who||'—';
+    if(!map[k])map[k]={who:k,money:0,lan:0,sp:{}};
+    map[k].money+=r.money;map[k].lan++;
+    map[k].sp[r.pid]=round3((map[k].sp[r.pid]||0)+r.base);
+  });
+  const byId={};prods.forEach(p=>byId[p.id]=p);
+  return Object.values(map).map(g=>Object.assign(g,{
+    chiTiet:Object.keys(g.sp).map(pid=>`${byId[pid]?byId[pid].name:pid}: ${byId[pid]?traceQty(byId[pid],g.sp[pid]):fmtQty(g.sp[pid])}`)
+  })).sort((a,b)=>b.money-a.money);
+}
+
+function showBuyerLookup(q){
+  buyerQuery=q==null?buyerQuery:q;
+  showModal(`<div class="modal modal-lg" style="max-width:940px">
+    <div class="modal-header"><span>👥</span><h2>Ai đã mua mặt hàng này</h2>
+      <button class="btn btn-outline btn-sm" onclick="closeModal()">✕</button></div>
+    <div class="modal-body">
+      <div class="form-group">
+        <label>Tên mặt hàng — gõ nhiều tên cách nhau dấu phẩy</label>
+        <input class="form-control" id="buyer-q" value="${(buyerQuery||'').replace(/"/g,'&quot;')}"
+          placeholder="cantanil, p40, sa kim cuong" autocomplete="off"
+          oninput="buyerQuery=this.value;renderBuyerResult()"/>
+        <div class="text-xs text-muted mt-8">Không cần gõ dấu. Mỗi từ khóa tìm mọi sản phẩm có tên chứa nó.</div>
+      </div>
+      <div id="buyer-result"></div>
+    </div>
+  </div>`);
+  renderBuyerResult();
+  setTimeout(()=>document.getElementById('buyer-q')?.focus(),50);
+}
+
+function renderBuyerResult(){
+  const el=document.getElementById('buyer-result');if(!el)return;
+  const prods=buyerMatchProducts(buyerQuery);
+  if(!prods.length){
+    el.innerHTML=`<div class="alert alert-warn" style="font-size:12.5px">${buyerQuery.trim()?'Không có sản phẩm nào khớp từ khóa này.':'Gõ tên mặt hàng ở ô trên để xem danh sách người mua.'}</div>`;
+    return;
+  }
+  const rows=buyerRows(prods),groups=buyerGroups(rows,prods);
+  const tongTien=rows.filter(r=>!r.cho).reduce((s,r)=>s+r.money,0);
+  el.innerHTML=`
+    <div class="card mb-16"><div class="card-header">📦 Mặt hàng khớp (${prods.length})</div>
+      <div class="card-body" style="display:flex;flex-direction:column;gap:6px">
+        ${prods.map(p=>{const st=reconStats(p);return `<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;font-size:12.5px">
+          <strong>${p.icon||'📦'} ${p.name}</strong>
+          <span class="text-muted">nhập ${traceQty(p,st.nhap)} · bán ${traceQty(p,st.ban)} · tồn app ${fmtStock(p)}</span>
+          <button class="btn btn-outline btn-sm" onclick="closeModal();showProductTrace('${p.id}')">🔎 Truy vết</button>
+        </div>`;}).join('')}
+      </div></div>
+    <div class="card mb-16"><div class="card-header">👤 Gộp theo khách (${groups.length} khách · ${fmt(tongTien)})</div>
+      <div class="tbl-wrap"><table>
+        <thead><tr><th>Khách</th><th>Số lần mua</th><th>Đã mua</th><th>Tổng tiền</th></tr></thead>
+        <tbody>${groups.map(g=>`<tr>
+          <td><strong>${g.who}</strong></td><td>${g.lan}</td>
+          <td class="text-xs">${g.chiTiet.join('<br>')}</td>
+          <td class="font-bold">${fmt(g.money)}</td></tr>`).join('')
+        ||'<tr><td colspan="4" class="text-center text-muted" style="padding:16px">Chưa có ai mua</td></tr>'}</tbody>
+      </table></div></div>
+    <div class="card"><div class="card-header">🧾 Từng lần bán (${rows.length})</div>
+      <div class="tbl-wrap"><table>
+        <thead><tr><th>Ngày</th><th>Chứng từ</th><th>Khách</th><th>Mặt hàng</th><th>SL</th><th>Đơn giá</th><th>Thành tiền</th></tr></thead>
+        <tbody>${rows.map(r=>`<tr${r.cho?' style="opacity:.6"':''}>
+          <td>${fmtD(r.date)}</td>
+          <td><code>${r.doc}</code><div class="text-xs text-muted">${r.kind}</div></td>
+          <td>${r.who}</td><td>${r.pname}</td>
+          <td class="font-bold">${fmtQty(r.qty)} ${shortUnitName(r.unit||'')}</td>
+          <td>${fmt(r.price)}</td><td>${fmt(r.money)}</td></tr>`).join('')
+        ||'<tr><td colspan="7" class="text-center text-muted" style="padding:16px">Chưa có lần bán nào</td></tr>'}</tbody>
+      </table></div></div>`;
 }
 
 /* ---- PRICE HISTORY (Lịch sử giá theo ngày) ---- */
