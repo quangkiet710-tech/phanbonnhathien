@@ -2732,11 +2732,32 @@ function saleDateWarn(productId,date){
   return null;
 }
 
+/* ---- SOÁT BÁN DƯỚI GIÁ VỐN ----
+   Tháng 6/2026 lỗ 3,4 triệu vì bán sai giá mà cuối tháng mới phát hiện. Bắt
+   ngay lúc nhập thì sai một dòng chứ không sai cả tháng. Vẫn cho lưu vì có
+   khi là chủ ý — xả hàng tồn, hoặc giá thị trường xuống phải bán theo. */
+function underCostWarn(productId,price,cost,qty){
+  const g=+price,v=+cost;
+  if(!(v>0)||!(g>=0)||g>=v)return null;
+  const p=DB.products.find(x=>x.id===productId);
+  const lech=v-g,sl=+qty||0;
+  return{level:'red',
+    msg:`${p?.name||'Dòng này'} bán ${fmt(g)} mà giá vốn ${fmt(v)} — lỗ ${fmt(lech)}/đơn vị`
+       +(sl>0?`, tổng lỗ ${fmt(lech*sl)}`:'')+`. Có gõ nhầm giá bán không?`};
+}
+
 // Icon ⚠️ gắn cạnh tên sản phẩm trong các bảng
 function saleDateBadge(productId,date){
   const w=saleDateWarn(productId,date);
   if(!w)return'';
   return` <span style="cursor:help;color:${w.level==='red'?'var(--red)':'var(--amber)'}" title="${w.msg.replace(/"/g,'&quot;')}">⚠️</span>`;
+}
+
+// Icon 💸 cho dòng bán dưới giá vốn
+function underCostBadge(it){
+  const w=underCostWarn(it.productId,it.price,it.costPrice,it.qty);
+  if(!w)return'';
+  return` <span style="cursor:help;color:var(--red)" title="${w.msg.replace(/"/g,'&quot;')}">💸</span>`;
 }
 
 // Chốt giá vốn vào từng dòng hàng ngay lúc bán, để sau này không bị tính lại
@@ -2790,7 +2811,7 @@ function renderDailySalesTable(){
     const n=e.items.length||1;
     return e.items.map((it,i)=>`<tr>
       ${i===0?`<td rowspan="${n}"><code>${e.time||e.id}</code></td><td rowspan="${n}"><strong>${e.customerName||'khách vãng lai'}</strong></td>`:''}
-      <td>${it.icon||'📦'} ${it.name}${saleDateBadge(it.productId,e.date)}</td>
+      <td>${it.icon||'📦'} ${it.name}${saleDateBadge(it.productId,e.date)}${underCostBadge(it)}</td>
       <td>${it.qty} ${it.unit||''}</td>
       <td>${(()=>{const k='ds|'+e.id+'|'+i,gv=itemProfit(it,k).cost;
         if(gv===null)return'<span class="text-muted">—</span>';
@@ -2854,8 +2875,8 @@ function showDailySalesForm(editId){
         </div>
         <div class="form-group" style="margin:0;min-width:100px"><label style="font-size:10px">Đơn vị</label><select class="form-control" id="ds-unit"><option value="">—</option></select></div>
         <div class="form-group" style="margin:0;width:70px"><label style="font-size:10px">SL</label><input class="form-control" type="text" inputmode="numeric" id="ds-qty" oninput="filterNumInput(this,true);dsRefreshCost()"/></div>
-        <div class="form-group" style="margin:0;min-width:90px"><label style="font-size:10px">Giá vốn</label><input class="form-control" type="text" inputmode="numeric" id="ds-cost" oninput="filterNumInput(this,false);this.dataset.manual='1'" title="Tự điền theo lô đang bán tới, sửa được"/></div>
-        <div class="form-group" style="margin:0;flex:1;min-width:100px"><label style="font-size:10px">Đơn giá bán</label><input class="form-control" type="text" inputmode="numeric" id="ds-price" oninput="filterNumInput(this,false)"/></div>
+        <div class="form-group" style="margin:0;min-width:90px"><label style="font-size:10px">Giá vốn</label><input class="form-control" type="text" inputmode="numeric" id="ds-cost" oninput="filterNumInput(this,false);this.dataset.manual='1';dsShowWarn()" title="Tự điền theo lô đang bán tới, sửa được"/></div>
+        <div class="form-group" style="margin:0;flex:1;min-width:100px"><label style="font-size:10px">Đơn giá bán</label><input class="form-control" type="text" inputmode="numeric" id="ds-price" oninput="filterNumInput(this,false);dsShowWarn()"/></div>
         <button class="btn btn-green btn-icon" onclick="addDailySalesItem()">+</button>
       </div>
       <div id="ds-warn" style="display:none;margin-top:8px;padding:8px 10px;border-radius:var(--radius-sm);font-size:12px;font-weight:600;line-height:1.45"></div>
@@ -2916,17 +2937,26 @@ function dsSaleDate(){
   return document.getElementById('ds-date')?.value||dailySalesDate;
 }
 
-// Hiện/ẩn ô cảnh báo lệch ngày cho sản phẩm đang gõ dở ở dòng nhập
+// Hiện/ẩn ô cảnh báo cho sản phẩm đang gõ dở ở dòng nhập:
+// lệch ngày (nhầm sản phẩm) và bán dưới giá vốn (nhầm giá)
 function dsShowWarn(){
   const box=document.getElementById('ds-warn');if(!box)return;
   const pid=document.getElementById('ds-prod-inp')?.dataset.pid||'';
-  const w=pid?saleDateWarn(pid,dsSaleDate()):null;
-  if(!w){box.style.display='none';box.innerHTML='';return;}
-  const red=w.level==='red';
+  const ws=[];
+  if(pid){
+    const w1=saleDateWarn(pid,dsSaleDate());if(w1)ws.push(w1);
+    const w2=underCostWarn(pid,
+      document.getElementById('ds-price')?.value,
+      document.getElementById('ds-cost')?.value,
+      document.getElementById('ds-qty')?.value);
+    if(w2)ws.push(w2);
+  }
+  if(!ws.length){box.style.display='none';box.innerHTML='';return;}
+  const red=ws.some(w=>w.level==='red');
   box.style.background=red?'var(--red-lt)':'var(--amber-lt)';
   box.style.color=red?'var(--red)':'var(--amber)';
   box.style.border='1px solid '+(red?'var(--red)':'var(--amber)');
-  box.innerHTML=`⚠️ ${w.msg}`;
+  box.innerHTML=ws.map(w=>`⚠️ ${w.msg}`).join('<br>');
   box.style.display='block';
 }
 
@@ -2954,6 +2984,7 @@ function dsFillUnitPrices(productId,unitName){
   const priceEl=document.getElementById('ds-price');
   const u=unitOf(p,unitName);
   if(priceEl&&u)priceEl.value=u.price||'';
+  dsShowWarn();   // giá bán vừa đổi -> soát lại xem có dưới giá vốn không
 }
 
 // Gõ số lượng xong giá vốn phải tính lại: bán 3 bao khác bán 10 bao khi lô đang mở
@@ -2966,6 +2997,7 @@ function dsRefreshCost(){
   const unit=document.getElementById('ds-unit')?.value||'';
   const qty=+(document.getElementById('ds-qty')?.value||0);
   costEl.value=dsDefaultCost(pid,unit,qty)||'';
+  dsShowWarn();
 }
 
 // Sửa giá vốn của 1 dòng đã có trong giỏ
@@ -3028,7 +3060,7 @@ function renderDailySalesItems(){
     c.innerHTML=`<div class="tbl-wrap"><table>
       <thead><tr><th>Sản phẩm</th><th>ĐVT</th><th>SL</th><th>Giá vốn</th><th>Đơn giá</th><th>Thành tiền</th><th>Lãi/Lỗ</th><th></th></tr></thead>
       <tbody>${dailySalesCart.map((it,i)=>`<tr>
-        <td>${it.icon||'📦'} ${it.name}${saleDateBadge(it.productId,dsSaleDate())}</td><td>${it.unit||'—'}</td><td>${it.qty}</td>
+        <td>${it.icon||'📦'} ${it.name}${saleDateBadge(it.productId,dsSaleDate())}${underCostBadge(it)}</td><td>${it.unit||'—'}</td><td>${it.qty}</td>
         <td><input class="form-control" type="text" inputmode="numeric" value="${it.costPrice||''}" placeholder="0"
           oninput="filterNumInput(this,false)" onchange="setCartCost(${i},this.value)"
           style="padding:4px 6px;width:90px;font-size:12px" title="Sửa giá vốn nếu cần"/></td>
@@ -3069,6 +3101,11 @@ function saveDailySales(editId){
     if(seenWarn[it.productId])return;
     const w=saleDateWarn(it.productId,date);
     if(w&&w.level==='red'){seenWarn[it.productId]=1;warnings.push('⚠️ '+w.msg);}
+  });
+  // Bán dưới giá vốn — soát từng dòng, không gộp theo sản phẩm vì mỗi dòng một giá
+  items.forEach(it=>{
+    const w=underCostWarn(it.productId,it.price,it.costPrice,it.qty);
+    if(w)warnings.push('💸 '+w.msg);
   });
   const canTruTheoSP={};
   items.forEach(it=>{
